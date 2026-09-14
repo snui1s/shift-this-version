@@ -36,9 +36,8 @@ def get_filtered_diff(tag: Optional[str]) -> str:
     """
     Extract source code Git diff excluding noise files like lockfiles,
     minified bundles, documentation, and image assets.
+    Compares the latest tag against current working tree (including commits and uncommitted edits).
     """
-    rev_range = f"{tag}..HEAD" if tag else "HEAD"
-    
     # Pathspec exclusions
     exclude_patterns = [
         ":(exclude)*.lock",
@@ -49,7 +48,10 @@ def get_filtered_diff(tag: Optional[str]) -> str:
         ":(exclude)*.jpg"
     ]
     
-    cmd = ["diff", rev_range, "--"] + exclude_patterns
+    cmd = ["diff"]
+    if tag:
+        cmd.append(tag)
+    cmd += ["--"] + exclude_patterns
     try:
         return run_git(cmd)
     except subprocess.CalledProcessError:
@@ -57,9 +59,11 @@ def get_filtered_diff(tag: Optional[str]) -> str:
 
 def get_diff_stat(tag: Optional[str]) -> str:
     """Retrieve git diff --stat to view summary of file changes."""
-    rev_range = f"{tag}..HEAD" if tag else "HEAD"
+    cmd = ["diff", "--stat"]
+    if tag:
+        cmd.append(tag)
     try:
-        return run_git(["diff", "--stat", rev_range])
+        return run_git(cmd)
     except subprocess.CalledProcessError:
         return ""
 
@@ -92,9 +96,19 @@ def has_uncommitted_changes() -> bool:
     except subprocess.CalledProcessError:
         return False
 
-def commit_version_bump(files: List[str], version: str) -> bool:
-    """Stage version files and create a release commit."""
+def get_current_branch() -> str:
+    """Retrieve current active Git branch name."""
     try:
+        branch = run_git(["rev-parse", "--abbrev-ref", "HEAD"])
+        return branch if branch else "main"
+    except subprocess.CalledProcessError:
+        return "main"
+
+def commit_version_bump(files: List[str], version: str, stage_all: bool = True) -> bool:
+    """Stage modified files and create a release commit."""
+    try:
+        if stage_all:
+            run_git(["add", "-u"])
         run_git(["add"] + files)
         commit_msg = f"chore(release): shift version to {version}"
         run_git(["commit", "-m", commit_msg])
@@ -110,3 +124,17 @@ def create_git_tag(tag_name: str, message: Optional[str] = None) -> bool:
         return True
     except subprocess.CalledProcessError:
         return False
+
+def push_to_remote(tag_name: Optional[str] = None, remote: str = "origin") -> Tuple[bool, str]:
+    """Push current branch and release tag to remote git repository."""
+    branch = get_current_branch()
+    try:
+        # 1. Push branch
+        run_git(["push", remote, branch])
+        # 2. Push tag if created
+        if tag_name:
+            run_git(["push", remote, tag_name])
+        return True, f"{branch} & {tag_name or ''}".strip(" & ")
+    except subprocess.CalledProcessError as e:
+        err_msg = str(e.stderr or e.stdout or str(e))
+        return False, err_msg.strip()

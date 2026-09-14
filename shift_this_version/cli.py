@@ -164,6 +164,7 @@ def execute_shift(
     yes: bool = False,
     tag: bool = True,
     commit: bool = True,
+    push: bool = True,
     var_name: Optional[List[str]] = None,
 ):
     """Core logic to analyze diff with AI and shift SemVer across targets."""
@@ -276,17 +277,29 @@ def execute_shift(
 
     # 9. Git Commit & Git Tag
     if updated_files and commit:
-        if git_ops.commit_version_bump(updated_files, next_ver):
+        if git_ops.commit_version_bump(updated_files, next_ver, stage_all=True):
             console.print(f"  Git committed: 'chore(release): shift version to {next_ver}'")
         else:
             console.print("  Git commit skipped or no changes staged.")
 
+    tag_created = False
     if tag:
         tag_name = f"v{next_ver}"
         if git_ops.create_git_tag(tag_name):
             console.print(f"  Created Git Tag: [bold cyan]{tag_name}[/bold cyan]")
+            tag_created = True
         else:
             console.print(f"  Could not create Git tag {tag_name}")
+
+    # 10. Git Push to Remote
+    if push and (commit or tag_created):
+        with console.status("[bold green]Pushing commit and tags to remote repository..."):
+            tag_to_push = f"v{next_ver}" if tag_created else None
+            success, msg = git_ops.push_to_remote(tag_name=tag_to_push)
+        if success:
+            console.print(f"  Pushed to remote: [bold cyan]{msg}[/bold cyan]")
+        else:
+            console.print(f"  [yellow]Push skipped or remote notice:[/yellow] {msg}")
 
     console.print(f"\n[bold green]Successfully shifted version to {next_ver}![/bold green]\n")
 
@@ -301,6 +314,7 @@ def main(
     yes: bool = typer.Option(False, "--yes", "-y", help="Automatic yes to prompts; run non-interactively"),
     tag: bool = typer.Option(True, "--tag/--no-tag", help="Create a git tag for the new version"),
     commit: bool = typer.Option(True, "--commit/--no-commit", help="Commit updated version files"),
+    push: bool = typer.Option(True, "--push/--no-push", help="Push commit and tag to remote git repository (default: True)"),
     var_name: Optional[List[str]] = typer.Option(None, "--var", help="Custom variable name to update in code files (e.g. VERSION)")
 ):
     """Smart SemVer Bumper driven by Code Diff & AI"""
@@ -317,6 +331,7 @@ def main(
                 yes=yes,
                 tag=tag,
                 commit=commit,
+                push=push,
                 var_name=var_name,
             )
 
@@ -446,6 +461,7 @@ def shift_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="Automatic yes to prompts; run non-interactively"),
     tag: bool = typer.Option(True, "--tag/--no-tag", help="Create a git tag for the new version"),
     commit: bool = typer.Option(True, "--commit/--no-commit", help="Commit updated version files"),
+    push: bool = typer.Option(True, "--push/--no-push", help="Push commit and tag to remote git repository (default: True)"),
     var_name: Optional[List[str]] = typer.Option(None, "--var", help="Custom variable name to update in code files (e.g. VERSION)")
 ):
     """Analyze diff with AI and shift SemVer across all relevant files automatically."""
@@ -458,6 +474,7 @@ def shift_cmd(
         yes=yes,
         tag=tag,
         commit=commit,
+        push=push,
         var_name=var_name,
     )
 
@@ -472,6 +489,7 @@ def bump_alias(
     yes: bool = typer.Option(False, "--yes", "-y"),
     tag: bool = typer.Option(True, "--tag/--no-tag"),
     commit: bool = typer.Option(True, "--commit/--no-commit"),
+    push: bool = typer.Option(True, "--push/--no-push"),
     var_name: Optional[List[str]] = typer.Option(None, "--var")
 ):
     execute_shift(
@@ -483,6 +501,7 @@ def bump_alias(
         yes=yes,
         tag=tag,
         commit=commit,
+        push=push,
         var_name=var_name,
     )
 

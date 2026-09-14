@@ -117,15 +117,18 @@ When you run `shift-this-version`:
    ```text
    Do you want to shift version to 0.2.0 across 2 targets? [Y/n]: y
    ```
-4. Updates files, commits changes, and creates Git tag:
+4. Updates files, commits changes, creates Git tag, and pushes to remote:
    ```text
      Updated pyproject.toml
      Updated frontend/src/config.ts
      Git committed: 'chore(release): shift version to 0.2.0'
      Created Git Tag: v0.2.0
+     Pushed to remote: main & v0.2.0
 
    Successfully shifted version to 0.2.0!
    ```
+
+   *(Note: Automatic pushing is enabled by default. Use `--no-push` if you want to push manually.)*
 
 ---
 

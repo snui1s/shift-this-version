@@ -142,9 +142,9 @@ Automatically apply version updates, Git commit, and Git tag without confirmatio
 shift-this-version shift --yes --provider gemini
 ```
 
-Disable Git commit or tag generation if needed:
+Disable Git commit, tag generation, or remote push if needed:
 ```sh
-shift-this-version shift --no-tag --no-commit
+shift-this-version shift --no-tag --no-commit --no-push
 ```
 
 ## API
