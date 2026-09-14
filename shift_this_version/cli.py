@@ -257,53 +257,100 @@ def execute_shift(
         console.print("\n[bold yellow][DRY RUN] No files or git state were modified.[/bold yellow]")
         raise typer.Exit(code=0)
 
-    # 7. Interactive confirmation
+    # 7. Interactive Stage-by-Stage Confirmation (skipped if --yes)
+    chosen_ver = next_ver
+    do_commit = commit
+    commit_msg = f"chore(release): shift version to {next_ver}"
+    do_tag = tag
+    do_push = push
+
     if not yes:
-        confirm = Confirm.ask(
-            f"\nDo you want to shift version to [bold green]{next_ver}[/bold green] across {len(targets)} targets?",
+        console.print("\n[bold yellow]── Release Confirmation Stages ───────────────────────────[/bold yellow]")
+
+        # Stage 1: Version Confirmation
+        confirm_ver = Confirm.ask(
+            f" [bold cyan]Stage 1 (Version)[/bold cyan]: Shift version to [bold green]{next_ver}[/bold green] across {len(targets)} targets?",
             default=True
         )
-        if not confirm:
-            console.print("[yellow]Aborted by user.[/yellow]")
-            raise typer.Exit(code=0)
+        if not confirm_ver:
+            custom_v = typer.prompt("  Enter custom version (press Enter to cancel)", default="").strip()
+            if not custom_v:
+                console.print("[yellow]Aborted by user.[/yellow]")
+                raise typer.Exit(code=0)
+            chosen_ver = custom_v
+
+        # Stage 2: Git Commit [y/n]
+        do_commit = Confirm.ask(
+            f" [bold cyan]Stage 2 (Git Commit)[/bold cyan]: Create Git commit for this release?",
+            default=commit
+        )
+
+        # Stage 3: Commit Message [y/n]
+        if do_commit:
+            default_msg = f"chore(release): shift version to {chosen_ver}"
+            use_default_msg = Confirm.ask(
+                f" [bold cyan]Stage 3 (Commit Message)[/bold cyan]: Use default message: [dim]'{default_msg}'[/dim]?",
+                default=True
+            )
+            if not use_default_msg:
+                commit_msg = typer.prompt("  Enter custom commit message", default=default_msg).strip()
+            else:
+                commit_msg = default_msg
+
+        # Stage 4: Git Tag [y/n]
+        tag_name = f"v{chosen_ver}"
+        do_tag = Confirm.ask(
+            f" [bold cyan]Stage 4 (Git Tag)[/bold cyan]: Create Git tag [bold cyan]{tag_name}[/bold cyan]?",
+            default=tag
+        )
+
+        # Stage 5: Git Push [y/n]
+        if do_commit or do_tag:
+            do_push = Confirm.ask(
+                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: Push commit and tag to remote repository (origin)?",
+                default=push
+            )
+        else:
+            do_push = False
 
     # 8. Apply updates to files
     updated_files: List[str] = []
     for t in targets:
-        success = updater.apply_version_bump(t, next_ver, dry_run=False)
+        success = updater.apply_version_bump(t, chosen_ver, dry_run=False)
         if success:
             updated_files.append(str(t.file_path))
-            console.print(f"  [green]Updated[/green] [cyan]{t.file_path}[/cyan]")
+            console.print(f"  [green]Updated[/green] [cyan]{t.file_path}[/cyan] -> [green]{chosen_ver}[/green]")
         else:
             console.print(f"  [red]Failed to update[/red] [cyan]{t.file_path}[/cyan]")
 
-    # 9. Git Commit & Git Tag
-    if updated_files and commit:
-        if git_ops.commit_version_bump(updated_files, next_ver, stage_all=True):
-            console.print(f"  Git committed: 'chore(release): shift version to {next_ver}'")
+    # 9. Git Commit
+    if updated_files and do_commit:
+        if git_ops.commit_version_bump(updated_files, chosen_ver, stage_all=True, message=commit_msg):
+            console.print(f"  Git committed: '[green]{commit_msg}[/green]'")
         else:
             console.print("  Git commit skipped or no changes staged.")
 
+    # 10. Git Tag
     tag_created = False
-    if tag:
-        tag_name = f"v{next_ver}"
+    if do_tag:
+        tag_name = f"v{chosen_ver}"
         if git_ops.create_git_tag(tag_name):
             console.print(f"  Created Git Tag: [bold cyan]{tag_name}[/bold cyan]")
             tag_created = True
         else:
             console.print(f"  Could not create Git tag {tag_name}")
 
-    # 10. Git Push to Remote
-    if push and (commit or tag_created):
+    # 11. Git Push to Remote
+    if do_push and (do_commit or tag_created):
         with console.status("[bold green]Pushing commit and tags to remote repository..."):
-            tag_to_push = f"v{next_ver}" if tag_created else None
+            tag_to_push = f"v{chosen_ver}" if tag_created else None
             success, msg = git_ops.push_to_remote(tag_name=tag_to_push)
         if success:
             console.print(f"  Pushed to remote: [bold cyan]{msg}[/bold cyan]")
         else:
             console.print(f"  [yellow]Push skipped or remote notice:[/yellow] {msg}")
 
-    console.print(f"\n[bold green]Successfully shifted version to {next_ver}![/bold green]\n")
+    console.print(f"\n[bold green]Successfully shifted version to {chosen_ver}![/bold green]\n")
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):

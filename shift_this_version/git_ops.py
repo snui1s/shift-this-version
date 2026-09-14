@@ -104,13 +104,13 @@ def get_current_branch() -> str:
     except subprocess.CalledProcessError:
         return "main"
 
-def commit_version_bump(files: List[str], version: str, stage_all: bool = True) -> bool:
+def commit_version_bump(files: List[str], version: str, stage_all: bool = True, message: Optional[str] = None) -> bool:
     """Stage modified files and create a release commit."""
     try:
         if stage_all:
             run_git(["add", "-u"])
         run_git(["add"] + files)
-        commit_msg = f"chore(release): shift version to {version}"
+        commit_msg = message or f"chore(release): shift version to {version}"
         run_git(["commit", "-m", commit_msg])
         return True
     except subprocess.CalledProcessError:
