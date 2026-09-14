@@ -72,26 +72,23 @@ Filtered Diff Size: 1,420 characters
 
 ---
 
-## 3. Shift Version (Standard Usage)
+## 3. Command: `shift` (Standard Usage)
 
-Once initial setup is complete, running `shift-this-version` with no arguments automatically analyzes your Git diff and commits using your saved AI provider and model:
+Once initial setup is complete, running `shift-this-version shift` automatically analyzes your Git diff and commits using your saved AI provider and model:
 
 ```bash
-# Standard run (uses your saved AI configuration from setup - no flags needed!)
-shift-this-version
-
-# Or explicitly invoke the shift command:
+# Standard shift (uses your saved AI configuration from setup - no flags needed!)
 shift-this-version shift
 ```
 
 ### 3.1 Dry-Run Mode (Preview without modifying files)
 ```bash
 # Preview AI recommendation safely:
-shift-this-version --dry-run
+shift-this-version shift --dry-run
 ```
 
 ### 3.2 Interactive Confirmation (Default)
-When you run `shift-this-version`:
+When you run `shift-this-version shift`:
 
 **Workflow:**
 1. AI analyzes diff and commits.

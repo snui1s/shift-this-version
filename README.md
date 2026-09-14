@@ -76,15 +76,15 @@ shift-this-version inspect
 ### 3. Shift Version
 
 #### Standard Run (Zero Flags Needed)
-After initial setup, running `shift-this-version` with no arguments automatically analyzes your diff and commits using your saved AI configuration and prompts for confirmation before applying changes:
+Run `shift-this-version shift` to analyze code changes with AI, bump version files, commit, tag, and push to remote automatically using your saved AI configuration:
 ```sh
-shift-this-version
+shift-this-version shift
 ```
 
 #### Dry-Run Mode
 Simulate the AI evaluation without modifying any files or Git state:
 ```sh
-shift-this-version --dry-run
+shift-this-version shift --dry-run
 ```
 
 #### Optional Overrides (Provider, Model, or Host)

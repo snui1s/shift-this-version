@@ -304,36 +304,27 @@ def execute_shift(
     console.print(f"\n[bold green]Successfully shifted version to {next_ver}![/bold green]\n")
 
 @app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
-    provider: Optional[str] = typer.Option("auto", "--provider", "-p", help="AI provider override (defaults to saved configuration)"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Specific model name override (defaults to saved model)"),
-    api_key: Optional[str] = typer.Option(None, "--api-key", help="API Key override"),
-    host: Optional[str] = typer.Option(None, "--host", help="Custom host / Base URL override"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate the shift without modifying files or git"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Automatic yes to prompts; run non-interactively"),
-    tag: bool = typer.Option(True, "--tag/--no-tag", help="Create a git tag for the new version"),
-    commit: bool = typer.Option(True, "--commit/--no-commit", help="Commit updated version files"),
-    push: bool = typer.Option(True, "--push/--no-push", help="Push commit and tag to remote git repository (default: True)"),
-    var_name: Optional[List[str]] = typer.Option(None, "--var", help="Custom variable name to update in code files (e.g. VERSION)")
-):
+def main(ctx: typer.Context):
     """Smart SemVer Bumper driven by Code Diff & AI"""
     if ctx.invoked_subcommand is None:
         if config.is_first_run():
             run_setup_wizard()
         else:
-            execute_shift(
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                host=host,
-                dry_run=dry_run,
-                yes=yes,
-                tag=tag,
-                commit=commit,
-                push=push,
-                var_name=var_name,
-            )
+            cfg = config.load_config()
+            def_prov = cfg.get("default_provider", "auto")
+            def_model = cfg.get("models", {}).get(def_prov, "default")
+            console.print(Panel(
+                f"[bold cyan]shift-this-version[/bold cyan] is ready!\n"
+                f"Configured Provider: [bold green]{def_prov}[/bold green] (Model: [yellow]{def_model}[/yellow])\n\n"
+                "[bold yellow]Commands:[/bold yellow]\n"
+                "  • [bold green]shift-this-version shift[/bold green]           ➔ Analyze diff with AI & shift version\n"
+                "  • [bold green]shift-this-version shift --dry-run[/bold green] ➔ Preview AI recommendation safely\n"
+                "  • [bold green]shift-this-version inspect[/bold green]         ➔ Inspect Git state, diff & version files\n"
+                "  • [bold green]shift-this-version config[/bold green]          ➔ Reconfigure AI provider, model, or host\n"
+                "  • [bold green]shift-this-version help[/bold green]            ➔ Show detailed command guide",
+                title="[bold blue]shift-this-version[/bold blue]",
+                expand=False
+            ))
 
 @app.command("config")
 def configure():
@@ -384,19 +375,18 @@ def show_help(
         else:
             console.print(f"[red]Unknown command: '{command}'[/red]")
 
-    # Default: Show comprehensive help guide
     console.print(Panel(
         "[bold cyan]shift-this-version[/bold cyan] - Smart SemVer Bumper driven by Code Diff & AI\n\n"
-        "[bold yellow]Standard Usage (Uses saved setup - No flags needed):[/bold yellow]\n"
-        "  $ [bold green]shift-this-version[/bold green]             ➔ Automatically shifts version using your configured AI\n"
-        "  $ [bold green]shift-this-version --dry-run[/bold green]   ➔ Preview AI suggestion without modifying files\n"
-        "  $ [bold green]shift-this-version -y[/bold green]          ➔ Non-interactive auto-confirm (for CI/CD)\n"
-        "  $ [bold green]shift-this-version inspect[/bold green]     ➔ Inspect Git diff, history, and version targets\n"
-        "  $ [bold green]shift-this-version config[/bold green]      ➔ Change default provider, model, or host\n\n"
-        "[bold yellow]Optional Overrides (Only to temporarily test another AI):[/bold yellow]\n"
-        "  $ shift-this-version -p gemini\n"
-        "  $ shift-this-version -p openrouter -m anthropic/claude-3.5-haiku\n"
-        "  $ shift-this-version -p ollama --host http://localhost:11434",
+        "[bold yellow]Commands:[/bold yellow]\n"
+        "  • [bold green]shift-this-version shift[/bold green]           ➔ Analyze diff with AI, bump version & push\n"
+        "  • [bold green]shift-this-version shift --dry-run[/bold green] ➔ Preview AI recommendation without modifying files\n"
+        "  • [bold green]shift-this-version shift -y[/bold green]        ➔ Non-interactive auto-confirm (for CI/CD)\n"
+        "  • [bold green]shift-this-version inspect[/bold green]         ➔ Inspect Git diff, history, and version targets\n"
+        "  • [bold green]shift-this-version config[/bold green]          ➔ Change default provider, model, or host\n\n"
+        "[bold yellow]Optional Overrides:[/bold yellow]\n"
+        "  $ shift-this-version shift -p gemini\n"
+        "  $ shift-this-version shift -p openrouter -m anthropic/claude-3.5-haiku\n"
+        "  $ shift-this-version shift --no-push",
         title="[bold blue]Help & Usage Guide[/bold blue]",
         expand=False
     ))
