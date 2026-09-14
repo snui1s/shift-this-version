@@ -138,3 +138,44 @@ def push_to_remote(tag_name: Optional[str] = None, remote: str = "origin") -> Tu
     except subprocess.CalledProcessError as e:
         err_msg = str(e.stderr or e.stdout or str(e))
         return False, err_msg.strip()
+
+def get_latest_diff_sample(tag: Optional[str]) -> Tuple[str, str]:
+    """
+    Retrieve the most recent diff sample:
+    - If there are uncommitted changes in the working tree, return their diff first.
+    - If working tree is clean, return the diff of the latest commit.
+    - Returns (label, diff_content)
+    """
+    exclude_patterns = [
+        ":(exclude)*.lock",
+        ":(exclude)*lock.json",
+        ":(exclude)*.min.*",
+        ":(exclude)docs/*",
+        ":(exclude)*.png",
+        ":(exclude)*.jpg"
+    ]
+
+    # 1. First priority: Uncommitted working tree edits (what user just modified)
+    try:
+        uncommitted = run_git(["diff", "HEAD", "--"] + exclude_patterns)
+        if uncommitted.strip():
+            status_lines = [line.strip().split()[-1] for line in run_git(["status", "--porcelain"]).split("\n") if line.strip()]
+            files_str = ", ".join(status_lines[:3])
+            if len(status_lines) > 3:
+                files_str += f" (+{len(status_lines)-3} more)"
+            return f"Latest Uncommitted Changes ({files_str})", uncommitted
+    except Exception:
+        pass
+
+    # 2. Second priority: Latest commit diff
+    try:
+        latest_commit = run_git(["log", "-1", "--oneline"])
+        commit_diff = run_git(["diff", "HEAD~1", "HEAD", "--"] + exclude_patterns)
+        if commit_diff.strip():
+            return f"Latest Commit Diff ({latest_commit})", commit_diff
+    except Exception:
+        pass
+
+    # 3. Fallback: Tag diff
+    tag_diff = get_filtered_diff(tag)
+    return "Changes Since Latest Release", tag_diff

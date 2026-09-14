@@ -8,9 +8,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.syntax import Syntax
 from rich.prompt import Confirm
+from rich.markup import escape
 
-# Ensure UTF-8 output encoding on legacy Windows consoles
+# Ensure UTF-8 output encoding & ANSI colors on Windows consoles
 if sys.platform == "win32":
+    os.system("")  # Enable VT100 ANSI terminal processing on Windows
     try:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
@@ -24,7 +26,7 @@ app = typer.Typer(
     help="Smart SemVer Bumper driven by Code Diff & AI (Gemini, Anthropic, OpenAI, DeepSeek, Groq, OpenRouter, Ollama)",
     no_args_is_help=False
 )
-console = Console(force_terminal=False)
+console = Console(force_terminal=True, color_system="auto")
 
 def run_setup_wizard():
     """Interactive first-time onboarding wizard categorized by AI provider type."""
@@ -391,28 +393,77 @@ def show_help(
         expand=False
     ))
 
+def format_diff_stat_colors(stat_text: str) -> str:
+    """Format git diff --stat with vivid colors for files, numbers, + (green), and - (red)."""
+    colored_lines = []
+    for line in stat_text.split("\n"):
+        if "|" in line:
+            parts = line.split("|", 1)
+            file_part = escape(parts[0])
+            rest = parts[1]
+            colored_rest = ""
+            for char in rest:
+                if char == "+":
+                    colored_rest += "[bold green]+[/bold green]"
+                elif char == "-":
+                    colored_rest += "[bold red]-[/bold red]"
+                else:
+                    colored_rest += escape(char)
+            colored_lines.append(f"[bold cyan]{file_part}[/bold cyan]|{colored_rest}")
+        elif "changed" in line and ("insertion" in line or "deletion" in line):
+            colored_lines.append(f"[bold yellow]{escape(line)}[/bold yellow]")
+        else:
+            colored_lines.append(escape(line))
+    return "\n".join(colored_lines)
+
+def format_diff_with_colors(diff_text: str, max_lines: int = 40) -> str:
+    """Highlight diff lines with bold green (+), bold red (-), cyan (@@), and yellow headers."""
+    lines = diff_text.split("\n")[:max_lines]
+    colored = []
+    for raw_line in lines:
+        line = escape(raw_line)
+        if raw_line.startswith("+++") or raw_line.startswith("---"):
+            colored.append(f"[bold magenta]{line}[/bold magenta]")
+        elif raw_line.startswith("+"):
+            colored.append(f"[bold green]{line}[/bold green]")
+        elif raw_line.startswith("-"):
+            colored.append(f"[bold red]{line}[/bold red]")
+        elif raw_line.startswith("@@"):
+            colored.append(f"[bold cyan]{line}[/bold cyan]")
+        elif raw_line.startswith("diff --git"):
+            colored.append(f"[bold yellow]{line}[/bold yellow]")
+        elif raw_line.startswith("index ") or raw_line.startswith("warning:"):
+            colored.append(f"[dim]{line}[/dim]")
+        else:
+            colored.append(f"[white]{line}[/white]")
+    return "\n".join(colored)
+
 @app.command()
 def inspect():
     """Scan and display Git history, diff preview, and detected version files/variables."""
-    with console.status("[bold green]Inspecting repository..."):
-        latest_tag = git_ops.get_latest_tag()
-        commits = git_ops.get_commits_since(latest_tag)
-        diff = git_ops.get_filtered_diff(latest_tag)
-        targets = updater.find_version_targets()
+    latest_tag = git_ops.get_latest_tag()
+    commits = git_ops.get_commits_since(latest_tag)
+    diff = git_ops.get_filtered_diff(latest_tag)
+    diff_stat = git_ops.get_diff_stat(latest_tag)
+    targets = updater.find_version_targets()
 
+    # 1. Git State
+    console.print("\n[bold blue]── 1. Git State ──────────────────────────────────────────[/bold blue]")
     console.print(Panel(
-        f"[bold cyan]Latest Tag:[/bold cyan] {latest_tag or 'No previous tag (Initial Release)'}\n"
-        f"[bold cyan]Commits Ahead:[/bold cyan] {len(commits)}",
-        title="[bold green]Git State[/bold green]"
+        f"[bold]Latest Tag:[/bold] [bold green]{latest_tag or 'No previous tag (Initial Release)'}[/bold green]\n"
+        f"[bold]Commits Ahead:[/bold] [bold yellow]{len(commits)} commits ahead[/bold yellow]",
+        title="[bold blue]Git Repository Info[/bold blue]",
+        expand=False
     ))
 
-    # Display detected version targets
+    # 2. Version Targets
+    console.print("\n[bold magenta]── 2. Detected Version Files & Variables ─────────────────[/bold magenta]")
     if targets:
-        table = Table(title="Detected Version Targets (Files & Code Variables)", show_header=True)
+        table = Table(title="Targets Found in Project", show_header=True)
         table.add_column("Type", style="cyan")
-        table.add_column("File Path", style="bold")
+        table.add_column("File Path", style="bold white")
         table.add_column("Line", justify="right", style="yellow")
-        table.add_column("Current Version", style="green")
+        table.add_column("Current Version", style="bold green")
         table.add_column("Snippet", style="dim")
 
         for t in targets:
@@ -428,18 +479,35 @@ def inspect():
         console.print("[yellow]No version files or variables (e.g. pyproject.toml, package.json, VERSION) detected.[/yellow]")
 
     if commits:
-        console.print("\n[bold yellow]Recent Commits:[/bold yellow]")
+        console.print("\n[bold cyan]Recent Commits:[/bold cyan]")
         for c in commits[:10]:
-            console.print(f"  • {c}")
+            console.print(f"  • [cyan]{c}[/cyan]")
         if len(commits) > 10:
             console.print(f"  ... and {len(commits) - 10} more commits.")
 
-    if diff:
-        console.print(f"\n[bold green]Filtered Diff Size:[/bold green] {len(diff)} characters")
-        diff_preview = "\n".join(diff.split("\n")[:25])
-        console.print(Syntax(diff_preview, "diff", theme="monokai", line_numbers=True))
+    diff_stat = git_ops.get_diff_stat(latest_tag)
+    sample_label, sample_diff = git_ops.get_latest_diff_sample(latest_tag)
+    total_diff = git_ops.get_filtered_diff(latest_tag)
+
+    # 3. Changed Files (Diff Stat)
+    if diff_stat:
+        console.print("\n[bold yellow]── 3. Changed Files Summary ──────────────────────────────[/bold yellow]")
+        colored_stat = format_diff_stat_colors(diff_stat)
+        console.print(Panel(colored_stat, title="[bold yellow]Files Modified (+Add / -Del)[/bold yellow]", expand=False))
+
+    # 4. Latest Diff Sample Preview
+    if sample_diff.strip():
+        console.print(f"\n[bold green]── 4. {sample_label} ──────────────────────────────[/bold green]")
+        colored_diff = format_diff_with_colors(sample_diff, max_lines=40)
+        console.print(Panel(
+            colored_diff,
+            title=f"[bold green]{sample_label}[/bold green] ([dim]{len(total_diff)} total characters[/dim])",
+            expand=False
+        ))
+        if len(sample_diff.split("\n")) > 40:
+            console.print("[dim]... remaining diff lines truncated in preview ...[/dim]")
     else:
-        console.print("\n[yellow]No changes detected between latest tag and HEAD.[/yellow]")
+        console.print("\n[green]No changes detected between latest tag and current workspace.[/green]")
 
 @app.command("shift")
 def shift_cmd(
