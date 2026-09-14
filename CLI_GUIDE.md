@@ -1,50 +1,55 @@
-# 📖 คู่มือการใช้งาน CLI (`shift-this-version`)
+# CLI User Guide (`shift-this-version`)
 
-คู่มือสรุปคำสั่งและตัวอย่างการใช้งานเครื่องมือ **`shift-this-version`** ผ่าน Terminal แบบละเอียด
-
----
-
-## 📌 สารบัญ
-1. [ตัวช่วยตั้งค่าครั้งแรก (First-Time Setup Wizard)](#1-ตัวช่วยตั้งค่าครั้งแรก-first-time-setup-wizard)
-2. [คำสั่งที่ 1: ตรวจสอบสถานะ Repo (`inspect`)](#2-คำสั่ง-inspect)
-3. [คำสั่งที่ 2: วิเคราะห์และ Shift เวอร์ชัน (`shift`)](#3-คำสั่ง-shift)
-4. [ตัวเลือกการใช้งานระดับสูง (Advanced Options)](#4-ตัวเลือกการใช้งานระดับสูง)
-5. [การนำไปใช้ใน CI/CD Pipeline](#5-การนำไปใช้ใน-cicd-pipeline)
-
+Comprehensive guide and reference for using `shift-this-version` from the command line.
 
 ---
 
-## 1. ตัวช่วยตั้งค่าครั้งแรก (First-Time Setup Wizard)
+## Table of Contents
+1. [First-Time Setup Wizard](#1-first-time-setup-wizard)
+2. [Command: `inspect`](#2-command-inspect)
+3. [Command: `shift`](#3-command-shift)
+4. [Command: `help`](#4-command-help)
+5. [Advanced Options & Providers](#5-advanced-options--providers)
+6. [CI/CD Integration](#6-cicd-integration)
 
-ในการใช้งานครั้งแรก เพียงพิมพ์คำสั่งสั้นๆ คำสั่งเดียว ระบบจะแสดงหน้าต่างต้อนรับและช่วยคุณตั้งค่าทันที:
+---
+
+## 1. First-Time Setup Wizard
+
+Run `shift-this-version` with no arguments on first use. The interactive setup wizard will guide you through configuration:
 
 ```bash
 shift-this-version
 ```
 
-### สิ่งที่ระบบจะทำ:
-1. **ต้อนรับและแนะนำตัว**: อธิบายการทำงานเบื้องต้น
-2. **เลือก AI Provider**: ให้คุณเลือก 1) Gemini, 2) OpenRouter, 3) OpenAI, หรือ 4) Ollama
-3. **ให้ใส่ API Key**: ซ่อนการพิมพ์เพื่อความปลอดภัย พร้อมบอกลิงก์ไปกดขอ Key ฟรี
-4. **บันทึกการตั้งค่า**: บันทึกเก็บไว้ที่ `~/.shift-this-version/config.json` ในเครื่องคุณอย่างปลอดภัย ไม่ต้องพิมพ์ซ้ำอีก
-5. **สอนวิธีใช้งานเบื้องต้น (Quick Start Guide)**: สรุปคำสั่งที่จำเป็นให้ดูทันที
+### What the wizard does:
+1. **Presents Provider Categories**: Choose from 4 groups:
+   - Group 1 (Direct Cloud Giants): Google Gemini, Anthropic Claude, OpenAI
+   - Group 2 (High-Speed & Value Powerhouses): DeepSeek, Groq
+   - Group 3 (Universal Hub): OpenRouter (Access 200+ models with 1 key)
+   - Group 4 (Local & Self-Hosted): Ollama, Custom OpenAI-Compatible
+2. **Prompts for Provider Credentials**:
+   - For Cloud providers: Prompts for API key (securely masked)
+   - For OpenRouter: Prompts for API key and lets you specify any model
+   - For Ollama: Prompts **only for the Host URL** (defaults to `http://localhost:11434`, no API key needed!)
+   - For Custom endpoints: Prompts for Base URL, model name, and optional key
+3. **Saves Configuration**: Saves settings securely to `~/.shift-this-version/config.json`.
+4. **Displays Quick-Start Guide**: Shows next recommended commands.
 
-> 💡 **ต้องการเปลี่ยน Provider หรือ Key ในภายหลัง?**  
-> สามารถพิมพ์ `shift-this-version config` ได้ทุกเมื่อเพื่อตั้งค่าใหม่  
-> *(หรือจะใช้ Environment Variables เช่น `GEMINI_API_KEY` ก็ยังรองรับตามเดิมสำหรับระบบ CI/CD)*
-
+> Note: To change providers, models, or keys at any time, run:  
+> `shift-this-version config`
 
 ---
 
-## 2. คำสั่ง `inspect`
+## 2. Command: `inspect`
 
-ใช้สำหรับสแกนดูสถานะ Git, ประวัติ Commit, Diff ล่าสุด และตรวจสอบว่าโปรเจกต์มีไฟล์หรือตัวแปรเวอร์ชันใดบ้างที่ระบบตรวจพบ:
+Scan Git history, commit count, code diff preview, and all detected version files and variables:
 
 ```bash
 shift-this-version inspect
 ```
 
-### ตัวอย่างผลลัพธ์:
+### Sample Output:
 ```text
 ┌───────────────────────────────── Git State ─────────────────────────────────┐
 │ Latest Tag: v0.1.0                                                          │
@@ -59,7 +64,7 @@ shift-this-version inspect
 └──────────┴─────────────────────────┴──────┴─────────────────┴───────────────┘
 
 Recent Commits:
-  • feat: add Google OAuth login
+  • feat: add OAuth2 login handler
   • fix: correct button padding
 
 Filtered Diff Size: 1,420 characters
@@ -67,24 +72,30 @@ Filtered Diff Size: 1,420 characters
 
 ---
 
-## 3. คำสั่ง `shift`
+## 3. Shift Version (Standard Usage)
 
-ใช้สำหรับส่ง Diff ให้ AI วิเคราะห์ และดำเนินการแก้ไขเลขเวอร์ชันตามประเภท (`major`, `minor`, `patch`)
+Once initial setup is complete, running `shift-this-version` with no arguments automatically analyzes your Git diff and commits using your saved AI provider and model:
 
-### 3.1 ทดลองวิเคราะห์โดยไม่แก้ไฟล์จริง (`--dry-run`)
-แนะนำให้รันคำสั่งนี้เพื่อตรวจสอบผลการวิเคราะห์ของ AI ก่อนเสมอ:
 ```bash
-shift-this-version shift --dry-run
-```
+# Standard run (uses your saved AI configuration from setup - no flags needed!)
+shift-this-version
 
-### 3.2 ใช้งานแบบ Interactive (ถามยืนยันก่อนแก้จริง)
-```bash
+# Or explicitly invoke the shift command:
 shift-this-version shift
 ```
 
-**ตัวอย่างขั้นตอนการทำงาน:**
-1. AI อ่าน Diff และ Commit
-2. แสดงการ์ดสรุปคำแนะนำ:
+### 3.1 Dry-Run Mode (Preview without modifying files)
+```bash
+# Preview AI recommendation safely:
+shift-this-version --dry-run
+```
+
+### 3.2 Interactive Confirmation (Default)
+When you run `shift-this-version`:
+
+**Workflow:**
+1. AI analyzes diff and commits.
+2. Displays structured recommendation:
    ```text
    ╭───────────────────── AI Recommendation: MINOR ──────────────────────╮
    │ Current Version: 0.1.0                                              │
@@ -99,30 +110,46 @@ shift-this-version shift
    ╰─────────────────────────────────────────────────────────────────────╯
 
    Files to update:
-     📝 pyproject.toml:3 (0.1.0 ➔ 0.2.0)
-     📝 frontend/src/config.ts:8 (0.1.0 ➔ 0.2.0)
+     • pyproject.toml:3 (0.1.0 -> 0.2.0)
+     • frontend/src/config.ts:8 (0.1.0 -> 0.2.0)
    ```
-3. ระบบจะถามยืนยัน:
+3. Prompts for confirmation:
    ```text
    Do you want to shift version to 0.2.0 across 2 targets? [Y/n]: y
    ```
-4. ระบบทำการอัปเดตไฟล์, ทำ `git commit` และสร้าง `git tag`:
+4. Updates files, commits changes, and creates Git tag:
    ```text
-     ✅ Updated pyproject.toml
-     ✅ Updated frontend/src/config.ts
-     📦 Git committed: 'chore(release): shift version to 0.2.0'
-     🏷️ Created Git Tag: v0.2.0
+     Updated pyproject.toml
+     Updated frontend/src/config.ts
+     Git committed: 'chore(release): shift version to 0.2.0'
+     Created Git Tag: v0.2.0
 
-   🎉 Successfully shifted version to 0.2.0!
+   Successfully shifted version to 0.2.0!
    ```
 
 ---
 
-## 4. ตัวเลือกการใช้งานระดับสูง
+## 4. Command: `help`
 
-### เลือก Provider, กำหนด Model หรือ Host URL (แบ่งเป็น 4 กลุ่ม):
+Display usage guide and command syntax:
 
-#### กลุ่มที่ 1: Direct Cloud Giants
+```bash
+# General help and examples
+shift-this-version help
+
+# Command-specific help
+shift-this-version help shift
+shift-this-version help inspect
+shift-this-version help config
+```
+
+---
+
+## 5. Advanced Options & Providers
+
+### Provider Selection:
+
+#### Group 1: Direct Cloud Giants
 ```bash
 # Google Gemini
 shift-this-version shift -p gemini -m gemini-2.5-flash
@@ -134,54 +161,54 @@ shift-this-version shift -p anthropic -m claude-3-5-sonnet-20241022
 shift-this-version shift -p openai -m gpt-4o
 ```
 
-#### กลุ่มที่ 2: High-Speed & Value Powerhouses
+#### Group 2: High-Speed & Value Powerhouses
 ```bash
-# DeepSeek (ฉลาดโค้ด ค่าโทเค็นถูกมาก)
+# DeepSeek
 shift-this-version shift -p deepseek -m deepseek-chat
 
-# Groq (เร็วระดับแสง)
+# Groq
 shift-this-version shift -p groq -m llama-3.3-70b-versatile
 ```
 
-#### กลุ่มที่ 3: Universal Hub (OpenRouter รวม 200+ โมเดล)
+#### Group 3: Universal Hub (OpenRouter)
 ```bash
-# พิมพ์เลือกรุ่นโมเดลที่ต้องการได้อิสระจาก openrouter.ai
+# Specify any model available on openrouter.ai
 shift-this-version shift -p openrouter -m anthropic/claude-3.5-haiku
 shift-this-version shift -p openrouter -m deepseek/deepseek-chat
 ```
 
-#### กลุ่มที่ 4: Local & Self-Hosted (ฟรี & รันในเครื่อง 100%)
+#### Group 4: Local & Self-Hosted
 ```bash
-# Ollama: กำหนด Host URL และชื่อ Model ได้ตามต้องการ
-shift-this-version shift -p ollama --host http://localhost:11434 -m llama3.2
+# Ollama: Specify host URL (no API key needed!)
+shift-this-version shift -p ollama --host http://localhost:11434
 
-# Custom OpenAI-Compatible (LM Studio, vLLM, LocalAI)
+# Custom OpenAI-compatible endpoint (LM Studio, vLLM, LocalAI)
 shift-this-version shift -p custom --host http://localhost:1234/v1 -m local-model
 ```
 
-### ระบุชื่อตัวแปรในโค้ดเพิ่มเติม (`--var`):
-หากโปรเจกต์ของคุณมีตัวแปรชื่อพิเศษที่ไม่ได้ใช้ชื่อมาตรฐาน (เช่น `RELEASE_VER` หรือ `APP_VERSION`):
+### Custom Code Variables (`--var`)
+If your project uses non-standard variable names in code:
 ```bash
 shift-this-version shift --var RELEASE_VER --var APP_VERSION
 ```
 
-### ไม่ต้องการให้ Git Tag หรือ Commit อัตโนมัติ:
+### Disable Git Commit or Tag
 ```bash
-# แค่แก้ไฟล์อย่างเดียว ไม่ต้องสร้าง tag และไม่ต้อง commit
+# Modify version files only without creating git tags or commits
 shift-this-version shift --no-tag --no-commit
 ```
 
 ---
 
-## 5. การนำไปใช้ใน CI/CD Pipeline
+## 6. CI/CD Integration
 
-หากต้องการนำไปรันใน GitHub Actions หรือ GitLab CI โดยไม่ต้องมีคนมารอกด `Y`:
+For non-interactive pipelines (GitHub Actions, GitLab CI):
 
 ```bash
 shift-this-version shift -p gemini --yes
 ```
 
-### ตัวอย่าง GitHub Actions Workflow (`.github/workflows/release.yml`):
+### GitHub Actions Workflow Example (`.github/workflows/release.yml`):
 ```yaml
 name: AI Version Shift
 
@@ -197,7 +224,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # ดึง git tags ทั้งหมด
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5

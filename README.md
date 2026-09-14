@@ -75,19 +75,20 @@ shift-this-version inspect
 
 ### 3. Shift Version
 
-#### Interactive Mode (Default)
-Analyzes the diff, displays the recommendation and rationale, and prompts for confirmation before applying changes:
+#### Standard Run (Zero Flags Needed)
+After initial setup, running `shift-this-version` with no arguments automatically analyzes your diff and commits using your saved AI configuration and prompts for confirmation before applying changes:
 ```sh
-shift-this-version shift
+shift-this-version
 ```
 
 #### Dry-Run Mode
 Simulate the AI evaluation without modifying any files or Git state:
 ```sh
-shift-this-version shift --dry-run
+shift-this-version --dry-run
 ```
 
-#### Specify Provider, Model, or Host
+#### Optional Overrides (Provider, Model, or Host)
+You can optionally override your saved default provider or model for a single run:
 
 Providers are organized into 4 categories:
 

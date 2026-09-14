@@ -1,4 +1,4 @@
-"""
+"""s
 ตัวอย่างการนำ shift_this_version ไปใช้ในสคริปต์ Automation หรือ CI/CD Bot
 """
 
