@@ -4,7 +4,7 @@
 
 `shift-this-version` is an automated release utility that inspects Git diffs and commit histories since the last release tag. Using LLMs (Google Gemini, OpenRouter, OpenAI, DeepSeek, Groq, or local Ollama instances), it analyzes code modifications against the [SemVer 2.0.0](https://semver.org/) specification to recommend the appropriate version increment (`major`, `minor`, `patch`).
 
-The tool updates version fields in standard project configurations (`pyproject.toml`, `package.json`, `Cargo.toml`, `setup.cfg`) as well as designated version variables directly within source code (e.g., `VERSION = "1.0.0"`, `export const VERSION = "1.0.0"`, `__version__ = "1.0.0"`). It also manages Git commits, release tags, and remote pushes.
+The tool updates version fields in standard project configurations (`pyproject.toml`, `package.json`, `Cargo.toml`, `setup.cfg`, `setup.py`, `composer.json`, `pubspec.yaml`) as well as designated version variables directly within source code (e.g., `VERSION = "1.0.0"`, `export const VERSION = "1.0.0"`, `__version__ = "1.0.0"`). It also manages Git commits, release tags, and remote pushes.
 
 ## Table of Contents
 

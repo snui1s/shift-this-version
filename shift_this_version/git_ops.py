@@ -39,6 +39,22 @@ def run_git(args: List[str], timeout: Optional[float] = 30.0) -> str:
         ) from e
 
 
+def is_git_repo() -> bool:
+    """Check if the current directory is inside a valid Git repository."""
+    try:
+        output = run_git(["rev-parse", "--is-inside-work-tree"])
+        return output.strip() == "true"
+    except (subprocess.CalledProcessError, subprocess.SubprocessError):
+        return False
+
+def has_remote(remote: str = "origin") -> bool:
+    """Check if the specified Git remote is configured."""
+    try:
+        remotes = run_git(["remote"])
+        return remote in remotes.split()
+    except (subprocess.CalledProcessError, subprocess.SubprocessError):
+        return False
+
 def get_latest_tag() -> Optional[str]:
     """Retrieve the latest reachable Git tag from the current commit."""
     try:
@@ -76,7 +92,10 @@ def get_uncommitted_diff() -> str:
     try:
         return run_git(["diff", "HEAD", "--"] + EXCLUDE_PATTERNS)
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
-        return ""
+        try:
+            return run_git(["diff", "--"] + EXCLUDE_PATTERNS)
+        except (subprocess.CalledProcessError, subprocess.SubprocessError):
+            return ""
 
 def get_filtered_diff(tag: Optional[str]) -> str:
     """

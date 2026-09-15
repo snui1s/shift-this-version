@@ -38,6 +38,24 @@ CONFIG_PATTERNS = [
         "regex": re.compile(rf'^(?P<prefix>\s*version\s*=\s*)(?P<version>{SEMVER_REGEX})(?P<suffix>\s*)$', re.MULTILINE),
         "name": "setup.cfg"
     },
+    # setup.py: version="1.2.3",
+    {
+        "filename": "setup.py",
+        "regex": re.compile(rf'^(?P<prefix>\s*version\s*=\s*["\'])(?P<version>{SEMVER_REGEX})(?P<suffix>["\'],?)', re.MULTILINE),
+        "name": "setup.py"
+    },
+    # composer.json: "version": "1.2.3"
+    {
+        "filename": "composer.json",
+        "regex": re.compile(rf'^(?P<prefix>\s*"version"\s*:\s*["\'])(?P<version>{SEMVER_REGEX})(?P<suffix>["\'])', re.MULTILINE),
+        "name": "composer.json"
+    },
+    # pubspec.yaml: version: 1.2.3+1
+    {
+        "filename": "pubspec.yaml",
+        "regex": re.compile(rf'^(?P<prefix>\s*version\s*:\s*)(?P<version>{SEMVER_REGEX})(?P<suffix>\s*)$', re.MULTILINE),
+        "name": "pubspec.yaml"
+    },
 ]
 
 # รูปแบบตัวแปรใน Code เช่น VERSION = "1.0.0", export const VERSION = "1.0.0", __version__ = "1.0.0"

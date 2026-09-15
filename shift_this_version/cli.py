@@ -21,6 +21,12 @@ if sys.platform == "win32":
 
 from shift_this_version import git_ops, analyzer, updater, config
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 app = typer.Typer(
     name="shift-this-version",
     help="Smart SemVer Bumper driven by Code Diff & AI (Gemini, Anthropic, OpenAI, DeepSeek, Groq, OpenRouter, Ollama)",
@@ -208,11 +214,23 @@ def execute_shift(
     console.print("\n[bold blue]Starting Smart SemVer Shift[/bold blue]")
 
     # 1. Inspect Git status and diff
-    latest_tag = git_ops.get_latest_tag()
-    commits = git_ops.get_commits_since(latest_tag)
-    diff = git_ops.get_diff_summary(latest_tag, max_chars=18000)
+    in_git = git_ops.is_git_repo()
+    latest_tag = git_ops.get_latest_tag() if in_git else None
+    commits = git_ops.get_commits_since(latest_tag) if in_git else []
+    diff = git_ops.get_diff_summary(latest_tag, max_chars=18000) if in_git else ""
 
-    if not diff and not commits:
+    if not in_git:
+        console.print("[bold yellow]Notice: Current directory is not a Git repository.[/bold yellow]")
+        if not manual:
+            if not yes:
+                fallback = Confirm.ask("Would you like to shift version in project files manually?", default=True)
+                if not fallback:
+                    raise typer.Exit(code=0)
+                manual = True
+            else:
+                console.print("[red]Cannot run AI diff analysis outside a Git repository.[/red]")
+                raise typer.Exit(code=1)
+    elif not diff and not commits:
         console.print("[yellow]No commits or diff changes detected since the last release.[/yellow]")
         raise typer.Exit(code=0)
 
@@ -222,10 +240,10 @@ def execute_shift(
         console.print("[red]Error: Could not find any version targets (pyproject.toml, package.json, or code variable like VERSION).[/red]")
         raise typer.Exit(code=1)
 
-    current_ver = latest_tag.lstrip("v") if latest_tag else targets[0].current_version
+    current_ver = (latest_tag.lstrip("v") if latest_tag else targets[0].current_version)
 
     # 3. Determine if running in Manual Mode or AI Mode
-    is_manual = manual or (provider and provider.lower() in ("manual", "none"))
+    is_manual = manual or (provider and provider.lower() in ("manual", "none")) or (not in_git)
     next_ver: Optional[str] = None
     bump_type: str = "MANUAL"
 
@@ -357,19 +375,22 @@ def execute_shift(
             chosen_ver = custom_v
 
         # Stage 2: Git Commit [y/n]
-        do_commit = Confirm.ask(
-            f" [bold cyan]Stage 2 (Git Commit)[/bold cyan]: Create Git commit for this release?",
-            default=commit
-        )
-        if do_commit:
-            has_dirty = git_ops.has_uncommitted_changes()
-            if has_dirty:
-                stage_all_modified = Confirm.ask(
-                    f"   Include all other modified workspace files in this commit?",
-                    default=True
-                )
-            else:
-                stage_all_modified = False
+        if in_git:
+            do_commit = Confirm.ask(
+                f" [bold cyan]Stage 2 (Git Commit)[/bold cyan]: Create Git commit for this release?",
+                default=commit
+            )
+            if do_commit:
+                has_dirty = git_ops.has_uncommitted_changes()
+                if has_dirty:
+                    stage_all_modified = Confirm.ask(
+                        f"   Include all other modified workspace files in this commit?",
+                        default=True
+                    )
+                else:
+                    stage_all_modified = False
+        else:
+            do_commit = False
 
         # Stage 3: Commit Message [y/n]
         if do_commit:
@@ -382,19 +403,24 @@ def execute_shift(
                 commit_msg = typer.prompt("  Enter custom commit message", default=commit_msg).strip()
 
         # Stage 4: Git Tag [y/n]
-        tag_name = f"v{chosen_ver}"
-        tag_already_exists = git_ops.tag_exists(tag_name)
-        tag_notice = " [bold red](Notice: Tag already exists locally)[/bold red]" if tag_already_exists else ""
-        do_tag = Confirm.ask(
-            f" [bold cyan]Stage 4 (Git Tag)[/bold cyan]: Create Git tag [bold cyan]{tag_name}[/bold cyan]?{tag_notice}",
-            default=(tag and not tag_already_exists)
-        )
+        if in_git:
+            tag_name = f"v{chosen_ver}"
+            tag_already_exists = git_ops.tag_exists(tag_name)
+            tag_notice = " [bold red](Notice: Tag already exists locally)[/bold red]" if tag_already_exists else ""
+            do_tag = Confirm.ask(
+                f" [bold cyan]Stage 4 (Git Tag)[/bold cyan]: Create Git tag [bold cyan]{tag_name}[/bold cyan]?{tag_notice}",
+                default=(tag and not tag_already_exists)
+            )
+        else:
+            do_tag = False
 
         # Stage 5: Git Push [y/n]
-        if do_commit or do_tag:
+        if (do_commit or do_tag) and in_git:
+            has_origin = git_ops.has_remote("origin")
+            remote_notice = "" if has_origin else " [bold yellow](Notice: No remote 'origin' configured)[/bold yellow]"
             do_push = Confirm.ask(
-                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: Push commit and tag to remote repository (origin)?",
-                default=push
+                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: Push commit and tag to remote repository (origin)?{remote_notice}",
+                default=(push and has_origin)
             )
         else:
             do_push = False
@@ -579,9 +605,28 @@ def format_diff_with_colors(diff_text: str, max_lines: int = 40) -> str:
 @app.command()
 def inspect():
     """Scan and display Git history, diff preview, and detected version files/variables."""
+    in_git = git_ops.is_git_repo()
+    targets = updater.find_version_targets()
+
+    if not in_git:
+        console.print("\n[bold yellow]Notice: Current directory is not a Git repository.[/bold yellow]")
+        console.print("\n[bold magenta]── Detected Version Files & Variables ─────────────────[/bold magenta]")
+        if targets:
+            table = Table(title="Targets Found in Project", show_header=True)
+            table.add_column("Type", style="cyan")
+            table.add_column("File Path", style="bold white")
+            table.add_column("Line", justify="right", style="yellow")
+            table.add_column("Current Version", style="bold green")
+            table.add_column("Snippet", style="dim")
+            for t in targets:
+                table.add_row(t.target_type, str(t.file_path), str(t.line_number), t.current_version, t.matched_line)
+            console.print(table)
+        else:
+            console.print("[yellow]No version files or variables detected.[/yellow]")
+        return
+
     latest_tag = git_ops.get_latest_tag()
     commits = git_ops.get_commits_since(latest_tag)
-    targets = updater.find_version_targets()
     diff_stat = git_ops.get_diff_stat(latest_tag)
     sample_label, sample_diff = git_ops.get_latest_diff_sample(latest_tag)
     total_diff = git_ops.get_filtered_diff(latest_tag)

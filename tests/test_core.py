@@ -203,15 +203,47 @@ def test_ollama_and_provider_detection(tmp_path: Path):
 
 def test_git_ops_tag_functions():
     from shift_this_version import git_ops
+    # ตรวจสอบ is_git_repo ใน workspace ปัจจุบัน
+    assert git_ops.is_git_repo() is True
+    # ตรวจสอบ has_remote
+    assert isinstance(git_ops.has_remote("origin"), bool)
     # ตรวจสอบ tag_exists สำหรับ tag ที่ไม่มีอยู่จริง
     assert git_ops.tag_exists("v999.999.999-nonexistent") is False
     # ตรวจสอบ create_git_tag รายงานผลแบบ tuple (bool, str)
-    # ถ้า tag ซ้ำต้องคืน (False, '... already exists ...')
     latest = git_ops.get_latest_tag()
     if latest:
         ok, msg = git_ops.create_git_tag(latest)
         assert ok is False
         assert "already exists" in msg
+
+def test_additional_config_patterns(tmp_path: Path):
+    # Test setup.py, composer.json, pubspec.yaml
+    setup_file = tmp_path / "setup.py"
+    setup_file.write_text('from setuptools import setup\nsetup(\n    name="pkg",\n    version="0.5.0",\n)\n', encoding="utf-8")
+
+    composer_file = tmp_path / "composer.json"
+    composer_file.write_text('{\n  "name": "vendor/package",\n  "version": "1.4.2"\n}\n', encoding="utf-8")
+
+    pubspec_file = tmp_path / "pubspec.yaml"
+    pubspec_file.write_text('name: flutter_app\nversion: 2.1.0\n', encoding="utf-8")
+
+    targets = find_version_targets(root_dir=tmp_path)
+    target_map = {t.file_path.name: t for t in targets}
+
+    assert "setup.py" in target_map
+    assert target_map["setup.py"].current_version == "0.5.0"
+    apply_version_bump(target_map["setup.py"], "0.6.0")
+    assert 'version="0.6.0"' in setup_file.read_text(encoding="utf-8")
+
+    assert "composer.json" in target_map
+    assert target_map["composer.json"].current_version == "1.4.2"
+    apply_version_bump(target_map["composer.json"], "1.5.0")
+    assert '"version": "1.5.0"' in composer_file.read_text(encoding="utf-8")
+
+    assert "pubspec.yaml" in target_map
+    assert target_map["pubspec.yaml"].current_version == "2.1.0"
+    apply_version_bump(target_map["pubspec.yaml"], "2.2.0")
+    assert 'version: 2.2.0' in pubspec_file.read_text(encoding="utf-8")
 
 def test_prompt_manual_bump():
     from shift_this_version import cli
@@ -248,6 +280,9 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_ollama_and_provider_detection(Path(tmp_dir))
     print("[PASS] test_ollama_and_provider_detection passed")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_additional_config_patterns(Path(tmp_dir))
+    print("[PASS] test_additional_config_patterns passed")
     test_git_ops_tag_functions()
     print("[PASS] test_git_ops_tag_functions passed")
     test_prompt_manual_bump()

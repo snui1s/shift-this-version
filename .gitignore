@@ -1,12 +1,48 @@
-# Python-generated files
+# Byte-compiled / optimized / cache files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+
+# Distribution / packaging builds
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+*.egg
 
 # Virtual environments
-.venv
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets & Environment variables
 .env
+.env.*
+*.env
+
+# Testing, Coverage & Linters
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating System temporary files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Private local scripts
 pypi_publish.py
