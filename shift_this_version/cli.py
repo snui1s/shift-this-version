@@ -337,10 +337,28 @@ def execute_shift(
 
                 console.print(Panel(panel_content, title=f"[{bump_color}]AI Recommendation: {bump_type}[/{bump_color}]", expand=False))
 
+    dirty_files = git_ops.get_dirty_files() if in_git else []
+
     # Display targets to update
-    console.print("\n[bold]Files to update:[/bold]")
+    console.print("\n[bold]Version Targets to Update:[/bold]")
     for t in targets:
-        console.print(f"  • [cyan]{t.file_path}[/cyan]:{t.line_number} ({t.current_version} -> [green]{next_ver}[/green])")
+        console.print(f"  • [bold white]{t.file_path}[/bold white]:{t.line_number} ([yellow]{t.current_version}[/yellow] -> [bold green]{next_ver}[/bold green])")
+
+    # Display detected workspace changes (modified, added, deleted, untracked)
+    if dirty_files:
+        console.print(f"\n[bold yellow]Workspace Changes Detected ({len(dirty_files)} file{'s' if len(dirty_files) > 1 else ''}):[/bold yellow]")
+        status_map = {
+            "M": ("[yellow]modified[/yellow]", "~"),
+            "A": ("[green]added[/green]", "+"),
+            "D": ("[red]deleted[/red]", "-"),
+            "??": ("[bold green]new file[/bold green]", "+"),
+            "R": ("[cyan]renamed[/cyan]", "→"),
+        }
+        for status, file_path in dirty_files[:20]:
+            label, symbol = status_map.get(status, (f"[cyan]{status}[/cyan]", "*"))
+            console.print(f"  {symbol} {label}: [white]{file_path}[/white]")
+        if len(dirty_files) > 20:
+            console.print(f"  ... and {len(dirty_files) - 20} more files.")
 
     if bump_type == "NONE" or current_ver == next_ver:
         console.print("\n[green]No version shift required.[/green]")
@@ -381,10 +399,9 @@ def execute_shift(
                 default=commit
             )
             if do_commit:
-                has_dirty = git_ops.has_uncommitted_changes()
-                if has_dirty:
+                if dirty_files:
                     stage_all_modified = Confirm.ask(
-                        f"   Include all other modified workspace files in this commit?",
+                        f"   Include all {len(dirty_files)} workspace changes (modified & new files) in this commit?",
                         default=True
                     )
                 else:
@@ -438,7 +455,8 @@ def execute_shift(
     # 9. Git Commit
     if updated_files and do_commit:
         if git_ops.commit_version_bump(updated_files, chosen_ver, stage_all=stage_all_modified, message=commit_msg):
-            console.print(f"  Git committed: '[green]{commit_msg}[/green]'")
+            scope_desc = f"{len(updated_files)} version target(s) + {len(dirty_files)} workspace file(s)" if stage_all_modified and dirty_files else f"{len(updated_files)} version target(s) only"
+            console.print(f"  Git committed: '[green]{commit_msg}[/green]' ([dim]{scope_desc}[/dim])")
         else:
             console.print("  Git commit skipped or no changes staged.")
 

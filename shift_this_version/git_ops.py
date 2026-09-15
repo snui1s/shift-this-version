@@ -163,6 +163,34 @@ def has_uncommitted_changes() -> bool:
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
         return False
 
+def get_dirty_files() -> List[Tuple[str, str]]:
+    """
+    Retrieve all dirty, modified, untracked, and deleted files in the workspace.
+    Returns a list of tuples: (status_symbol, relative_file_path).
+    """
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=15.0
+        )
+        results = []
+        for line in res.stdout.splitlines():
+            if not line.strip() or len(line) < 4:
+                continue
+            status = line[:2].strip()
+            path = line[3:].strip()
+            if path.startswith('"') and path.endswith('"'):
+                path = path[1:-1]
+            results.append((status, path))
+        return results
+    except (subprocess.CalledProcessError, subprocess.SubprocessError):
+        return []
+
 def get_current_branch() -> str:
     """Retrieve current active Git branch name."""
     try:
@@ -172,13 +200,15 @@ def get_current_branch() -> str:
         return "main"
 
 def commit_version_bump(files: List[str], version: str, stage_all: bool = False, message: Optional[str] = None) -> bool:
-    """Stage modified version files only and create a release commit."""
+    """Stage modified version files and optionally all workspace changes, then create a release commit."""
     try:
         if not files:
             return False
         if stage_all:
-            run_git(["add", "-u"])
-        run_git(["add"] + files)
+            # Stage all changes across repository: both modified tracked files and new untracked files
+            run_git(["add", "-A"])
+        else:
+            run_git(["add"] + files)
         commit_msg = message or f"chore(release): shift version to {version}"
         run_git(["commit", "-m", commit_msg])
         return True
