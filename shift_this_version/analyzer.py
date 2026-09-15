@@ -3,17 +3,24 @@ import json
 import re
 from typing import List, Literal, Optional, Tuple
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing import Any
 
 class BumpAnalysis(BaseModel):
     bump_type: Literal["major", "minor", "patch", "none"] = Field(
+        default="patch",
         description="The SemVer bump level: major, minor, patch, or none"
     )
     confidence: float = Field(
         default=1.0,
         description="Confidence score between 0.0 and 1.0"
     )
+    commit_message: str = Field(
+        default="",
+        description="Concise Conventional Commit message (e.g. 'feat: ...' or 'fix: ...') summarizing the code changes"
+    )
     reasoning: str = Field(
+        default="AI completed SemVer analysis.",
         description="Detailed explanation of why this bump level was chosen based on the diff and commits"
     )
     breaking_changes: List[str] = Field(
@@ -25,6 +32,101 @@ class BumpAnalysis(BaseModel):
         description="List of key changes, features, or bug fixes detected"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        # Check for provider error messages
+        if "error" in data:
+            err = data["error"]
+            err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+            raise ValueError(f"AI Provider error: {err_msg}")
+
+        # Unwrap if inside nested containers: "analysis", "result", "data", "response", "semver"
+        for container_key in ["analysis", "result", "data", "response", "semver", "version_bump", "recommendation"]:
+            if container_key in data and isinstance(data[container_key], dict):
+                inner = data[container_key]
+                for k, v in inner.items():
+                    data.setdefault(k, v)
+
+        # Normalize bump_type synonyms and aliases
+        if "bump_type" not in data or not data["bump_type"]:
+            for alt in ["bumpType", "bump", "type", "level", "semver_bump", "version_bump", "action", "recommendation"]:
+                if alt in data and isinstance(data[alt], str):
+                    data["bump_type"] = data[alt]
+                    break
+
+        if "bump_type" in data and isinstance(data["bump_type"], str):
+            val = data["bump_type"].lower().strip()
+            if "major" in val:
+                data["bump_type"] = "major"
+            elif "minor" in val:
+                data["bump_type"] = "minor"
+            elif "patch" in val:
+                data["bump_type"] = "patch"
+            elif "none" in val:
+                data["bump_type"] = "none"
+            else:
+                data["bump_type"] = "patch"
+        else:
+            data["bump_type"] = "patch"
+
+        # Normalize reasoning synonyms and aliases
+        if "reasoning" not in data or not data["reasoning"]:
+            for alt in ["reason", "explanation", "rationale", "description", "details", "summary", "justification", "notes"]:
+                if alt in data and data[alt]:
+                    data["reasoning"] = str(data[alt])
+                    break
+        if not data.get("reasoning"):
+            data["reasoning"] = "AI analyzed code diff and recommended this SemVer shift."
+
+        # Normalize commit_message synonyms
+        if "commit_message" not in data or not data["commit_message"]:
+            for alt in ["commitMessage", "commit_msg", "suggested_commit_message", "conventional_commit", "message"]:
+                if alt in data and data[alt]:
+                    data["commit_message"] = str(data[alt])
+                    break
+
+        # Normalize confidence
+        if "confidence" not in data:
+            for alt in ["confidence_score", "score"]:
+                if alt in data:
+                    data["confidence"] = data[alt]
+                    break
+        try:
+            conf = float(data.get("confidence", 1.0))
+            if conf > 1.0:
+                conf = conf / 100.0
+            data["confidence"] = max(0.0, min(1.0, conf))
+        except (ValueError, TypeError):
+            data["confidence"] = 0.95
+
+        # Normalize breaking_changes
+        if "breaking_changes" not in data:
+            for alt in ["breakingChanges", "breaking"]:
+                if alt in data:
+                    data["breaking_changes"] = data[alt]
+                    break
+        if isinstance(data.get("breaking_changes"), str):
+            data["breaking_changes"] = [data["breaking_changes"]]
+        elif not isinstance(data.get("breaking_changes"), list):
+            data["breaking_changes"] = []
+
+        # Normalize key_changes
+        if "key_changes" not in data:
+            for alt in ["keyChanges", "changes"]:
+                if alt in data:
+                    data["key_changes"] = data[alt]
+                    break
+        if isinstance(data.get("key_changes"), str):
+            data["key_changes"] = [data["key_changes"]]
+        elif not isinstance(data.get("key_changes"), list):
+            data["key_changes"] = []
+
+        return data
+
 SYSTEM_PROMPT = """You are an expert software engineer and Semantic Versioning (SemVer 2.0.0) analyst.
 Your task is to analyze the provided Git commit logs and code diff, and decide whether the next release should be:
 - "major": Contains backwards-incompatible API changes, breaking changes, removed public endpoints/functions/classes/parameters, or major breaking redesigns.
@@ -32,11 +134,14 @@ Your task is to analyze the provided Git commit logs and code diff, and decide w
 - "patch": Backwards-compatible bug fixes, minor refactoring, dependency updates, internal optimizations, or documentation changes.
 - "none": No functional code or behavior changes warranting a version increment.
 
+Also formulate a clear, concise Conventional Commit message (e.g., "feat: ...", "fix: ...", "refactor: ...") that accurately summarizes the overall code diff.
+
 Analyze with strict attention to public API contracts, function signatures, and exported variables.
 You MUST output valid JSON matching this exact structure:
 {
   "bump_type": "major" | "minor" | "patch" | "none",
   "confidence": 0.95,
+  "commit_message": "feat(core): concise Conventional Commit message summarizing the changes",
   "reasoning": "Explanation of the decision",
   "breaking_changes": ["detail of breaking change 1", ...],
   "key_changes": ["summary of change 1", ...]
@@ -47,14 +152,61 @@ Output ONLY the JSON object. Do not wrap in markdown or include additional text.
 from shift_this_version import config
 
 def extract_json_from_text(text: str) -> dict:
-    """ทำความสะอาดและแปลงข้อความตอบกลับจาก LLM ให้เป็น JSON dict"""
+    """ทำความสะอาดและแปลงข้อความตอบกลับจาก LLM ให้เป็น JSON dict อย่างแม่นยำและทนทาน"""
+    if not text or not text.strip():
+        raise ValueError("Received empty response from AI model.")
+
     cleaned = text.strip()
-    # ตัด markdown code block ออกถ้ามี
-    if cleaned.startswith("```"):
-        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
-        if match:
-            cleaned = match.group(1).strip()
-    return json.loads(cleaned)
+
+    # 1. ลบ thinking block จาก reasoning models (<think>...</think>)
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", cleaned, flags=re.IGNORECASE).strip()
+
+    # 2. ตรวจหา markdown code fence ```json ... ``` หรือ ``` ... ```
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, flags=re.IGNORECASE)
+    if match:
+        candidate = match.group(1).strip()
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+            elif isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+        except Exception:
+            pass
+
+    # 3. ลอง parse ข้อความทั้งหมดโดยตรง
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+        elif isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+            return parsed[0]
+    except Exception:
+        pass
+
+    # 4. หากมีข้อความเกริ่นนำหรือสรุปท้าย ให้หา outermost { ... }
+    first_brace = cleaned.find("{")
+    last_brace = cleaned.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        candidate = cleaned[first_brace:last_brace + 1]
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+            elif isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+        except Exception:
+            # ลองแก้ไข trailing commas
+            try:
+                fixed = re.sub(r",\s*([\]}])", r"\1", candidate)
+                parsed = json.loads(fixed)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+
+    snippet = cleaned[:200] + ("..." if len(cleaned) > 200 else "")
+    raise ValueError(f"Could not parse valid JSON from AI response: {snippet}")
 
 def get_key_for_provider(provider: str, explicit_key: Optional[str] = None) -> Optional[str]:
     """
@@ -89,13 +241,23 @@ def get_key_for_provider(provider: str, explicit_key: Optional[str] = None) -> O
             return val
     return None
 
-def detect_default_provider() -> Tuple[str, Optional[str]]:
+def is_ollama_running(host: str = "http://localhost:11434") -> bool:
+    """Check if local Ollama daemon is reachable with a fast 1.0s timeout."""
+    try:
+        with httpx.Client(timeout=1.0) as client:
+            resp = client.get(f"{host.rstrip('/')}/api/tags")
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+def detect_default_provider() -> Tuple[Optional[str], Optional[str]]:
     """ตรวจจับ provider และ key ที่พร้อมใช้งานอัตโนมัติ"""
     # 1. ดูจาก default_provider ใน config.json
     cfg_default = config.get_default_provider()
     if cfg_default:
         key = get_key_for_provider(cfg_default)
-        return cfg_default, key
+        if key or cfg_default in ("ollama", "custom"):
+            return cfg_default, key
 
     # 2. ตรวจเช็คทีละ provider ตามลำดับความนิยม
     for prov in ["gemini", "anthropic", "openrouter", "deepseek", "groq", "openai"]:
@@ -103,9 +265,14 @@ def detect_default_provider() -> Tuple[str, Optional[str]]:
         if key:
             return prov, key
 
-    # 3. Fallback: Ollama
-    ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-    return "ollama", ollama_host
+    # 3. ตรวจสอบว่ามี Ollama รันอยู่จริงหรือไม่ ก่อนจะเลือกใช้งาน
+    ollama_host = config.get_configured_host("ollama") or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    if is_ollama_running(ollama_host):
+        return "ollama", ollama_host
+
+    # 4. หากไม่มี provider หรือ key ที่พร้อมใช้งานเลย คืน None
+    return None, None
+
 
 
 def call_gemini(diff: str, commits: List[str], api_key: str, model: str = "gemini-2.5-flash") -> BumpAnalysis:
@@ -186,9 +353,24 @@ def call_openai_compatible(
     }
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(url, headers=headers, json=payload)
+        # ถ้า provider ไม่รองรับ response_format ให้ retry โดยเอา response_format ออก
+        if resp.status_code == 400 and "response_format" in resp.text.lower():
+            payload.pop("response_format", None)
+            resp = client.post(url, headers=headers, json=payload)
+
         resp.raise_for_status()
         data = resp.json()
-        raw_text = data["choices"][0]["message"]["content"]
+        if "error" in data:
+            err = data["error"]
+            err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+            raise ValueError(f"AI Provider error: {err_msg}")
+
+        choices = data.get("choices", [])
+        if not choices:
+            raise ValueError(f"No completion choices returned by AI provider: {data}")
+
+        msg = choices[0].get("message", {})
+        raw_text = msg.get("content") or msg.get("reasoning_content") or ""
         parsed = extract_json_from_text(raw_text)
         return BumpAnalysis(**parsed)
 
@@ -227,7 +409,13 @@ def analyze(
     รองรับ: gemini, anthropic, openrouter, deepseek, groq, openai, ollama, custom
     """
     if not provider or provider == "auto":
-        provider, detected_key = detect_default_provider()
+        detected_prov, detected_key = detect_default_provider()
+        if not detected_prov:
+            raise ValueError(
+                "No configured AI provider or active API key found. "
+                "Please run 'shift-this-version config' to select an AI provider and enter your API key."
+            )
+        provider = detected_prov
         if not api_key:
             api_key = detected_key
 
@@ -301,6 +489,11 @@ def analyze(
     # 4. กลุ่ม Local & Self-Hosted
     elif provider == "ollama":
         target_host = chosen_host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        if not is_ollama_running(target_host):
+            raise ConnectionError(
+                f"Could not connect to Ollama at '{target_host}'. "
+                "Please verify that the Ollama service is running, or run 'shift-this-version config' to switch providers."
+            )
         target_model = chosen_model or "llama3.2"
         return call_ollama(diff, commits, host=target_host, model=target_model)
 

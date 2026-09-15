@@ -127,6 +127,21 @@ When you run `shift-this-version shift`:
 
    *(Note: Automatic pushing is enabled by default. Use `--no-push` if you want to push manually.)*
 
+### 3.3 Manual SemVer Mode (No AI Required)
+If you are working offline, have not configured an AI provider, or simply prefer to select the bump level yourself:
+
+```bash
+shift-this-version shift --manual
+```
+
+This presents a fast interactive selection:
+- `[1] Patch  -> 1.2.4 (Bug fixes, backwards-compatible)`
+- `[2] Minor  -> 1.3.0 (New features, backwards-compatible)`
+- `[3] Major  -> 2.0.0 (Breaking changes, major redesign)`
+- `[4] Custom -> Enter custom version string`
+
+After choosing, it flows directly into the 5 discrete release confirmation stages (Version -> Commit -> Commit Message -> Tag -> Push).
+
 ---
 
 ## 4. Command: `help`

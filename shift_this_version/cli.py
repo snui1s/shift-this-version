@@ -157,6 +157,40 @@ def run_setup_wizard():
         expand=False
     ))
 
+def prompt_manual_bump(current_ver: str) -> str:
+    """Prompt user to select SemVer bump level manually without AI."""
+    patch_v = updater.calculate_next_version(current_ver, "patch")
+    minor_v = updater.calculate_next_version(current_ver, "minor")
+    major_v = updater.calculate_next_version(current_ver, "major")
+
+    console.print(Panel(
+        f"[bold]Current Version:[/bold] [bold yellow]{current_ver}[/bold yellow]\n\n"
+        f"  [bold cyan][1] Patch[/bold cyan]  ➔ [bold green]{patch_v}[/bold green]  [dim](Bug fixes, backwards-compatible)[/dim]\n"
+        f"  [bold cyan][2] Minor[/bold cyan]  ➔ [bold green]{minor_v}[/bold green]  [dim](New features, backwards-compatible)[/dim]\n"
+        f"  [bold cyan][3] Major[/bold cyan]  ➔ [bold green]{major_v}[/bold green]  [dim](Breaking changes, major redesign)[/dim]\n"
+        f"  [bold cyan][4] Custom[/bold cyan] ➔ [dim]Enter a custom version string[/dim]\n"
+        f"  [bold red][0] Cancel[/bold red]",
+        title="[bold blue]Manual Version Shift (No AI)[/bold blue]",
+        expand=False
+    ))
+
+    choice = typer.prompt("Select bump level [1/2/3/4/0]", default="1").strip()
+    if choice == "1":
+        return patch_v
+    elif choice == "2":
+        return minor_v
+    elif choice == "3":
+        return major_v
+    elif choice == "4":
+        custom = typer.prompt("Enter custom version").strip()
+        if not custom:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(code=0)
+        return custom
+    else:
+        console.print("[yellow]Aborted by user.[/yellow]")
+        raise typer.Exit(code=0)
+
 def execute_shift(
     provider: Optional[str] = "auto",
     model: Optional[str] = None,
@@ -168,6 +202,7 @@ def execute_shift(
     commit: bool = True,
     push: bool = True,
     var_name: Optional[List[str]] = None,
+    manual: bool = False,
 ):
     """Core logic to analyze diff with AI and shift SemVer across targets."""
     console.print("\n[bold blue]Starting Smart SemVer Shift[/bold blue]")
@@ -189,60 +224,100 @@ def execute_shift(
 
     current_ver = latest_tag.lstrip("v") if latest_tag else targets[0].current_version
 
-    # 3. Resolve active provider, model, and host from saved config if not passed
-    saved_prov = config.get_default_provider() or "gemini"
-    active_prov = provider if (provider and provider != "auto") else saved_prov
-    active_model = model or config.get_configured_model(active_prov)
-    active_host = host or config.get_configured_host(active_prov)
-    model_disp = f" ({active_model})" if active_model else ""
+    # 3. Determine if running in Manual Mode or AI Mode
+    is_manual = manual or (provider and provider.lower() in ("manual", "none"))
+    next_ver: Optional[str] = None
+    bump_type: str = "MANUAL"
 
-    # 4. Call AI analyzer
-    analysis: Optional[analyzer.BumpAnalysis] = None
-    with console.status(f"[bold green]AI is analyzing code diff & commits using [cyan]{active_prov}[/cyan]{model_disp}..."):
-        try:
-            analysis = analyzer.analyze(
-                diff=diff,
-                commits=commits,
-                provider=active_prov,
-                model=active_model,
-                api_key=api_key,
-                host=active_host
-            )
-        except Exception as e:
-            console.print(f"[bold red]AI Analysis Failed:[/bold red] {e}")
-            raise typer.Exit(code=1)
+    if is_manual:
+        console.print("[bold cyan]Running in Manual Mode (No AI)[/bold cyan]")
+        next_ver = prompt_manual_bump(current_ver)
+    else:
+        saved_prov = config.get_default_provider()
+        active_prov = provider if (provider and provider != "auto") else saved_prov
 
-    # 5. Compute next SemVer
-    bump_type = analysis.bump_type.upper()
-    next_ver = updater.calculate_next_version(current_ver, analysis.bump_type)
+        if not active_prov or active_prov == "auto":
+            detected_prov, _ = analyzer.detect_default_provider()
+            active_prov = detected_prov
 
-    color_map = {
-        "MAJOR": "bold red",
-        "MINOR": "bold yellow",
-        "PATCH": "bold green",
-        "NONE": "bold white"
-    }
-    bump_color = color_map.get(bump_type, "bold cyan")
+        if not active_prov:
+            console.print("[bold yellow]Notice: No AI provider or API key configured.[/bold yellow]")
+            if not yes:
+                fallback_to_manual = Confirm.ask("Would you like to shift version manually?", default=True)
+                if not fallback_to_manual:
+                    console.print("[yellow]Run 'shift-this-version config' to configure an AI provider.[/yellow]")
+                    raise typer.Exit(code=0)
+                next_ver = prompt_manual_bump(current_ver)
+            else:
+                console.print("[red]Cannot proceed in non-interactive mode without a configured provider.[/red]")
+                raise typer.Exit(code=1)
+        else:
+            active_model = model or config.get_configured_model(active_prov)
+            active_host = host or config.get_configured_host(active_prov)
+            model_disp = f" ({active_model})" if active_model else ""
 
-    # 6. Display recommendation
-    panel_content = (
-        f"[bold]Current Version:[/bold] {current_ver}\n"
-        f"[bold]Suggested Version:[/bold] [{bump_color}]{next_ver}[/{bump_color}]  ([bold]{bump_type}[/bold] shift)\n"
-        f"[bold]Confidence:[/bold] {analysis.confidence * 100:.1f}%\n\n"
-        f"[bold]Reasoning:[/bold]\n{analysis.reasoning}\n"
-    )
+            # 4. Call AI analyzer with graceful fallback
+            analysis: Optional[analyzer.BumpAnalysis] = None
+            ai_error: Optional[Exception] = None
+            with console.status(f"[bold green]AI is analyzing code diff & commits using [cyan]{active_prov}[/cyan]{model_disp}..."):
+                try:
+                    analysis = analyzer.analyze(
+                        diff=diff,
+                        commits=commits,
+                        provider=active_prov,
+                        model=active_model,
+                        api_key=api_key,
+                        host=active_host
+                    )
+                except Exception as e:
+                    ai_error = e
 
-    if analysis.breaking_changes:
-        panel_content += f"\n[bold red]Breaking Changes Detected:[/bold red]\n"
-        for b in analysis.breaking_changes:
-            panel_content += f"  • [red]{b}[/red]\n"
+            if ai_error is not None:
+                console.print(f"[bold red]AI Analysis Failed:[/bold red] {ai_error}")
+                if not yes:
+                    fallback_to_manual = Confirm.ask("\nWould you like to continue and shift version manually?", default=True)
+                    if not fallback_to_manual:
+                        raise typer.Exit(code=1)
+                    next_ver = prompt_manual_bump(current_ver)
+                else:
+                    raise typer.Exit(code=1)
 
-    if analysis.key_changes:
-        panel_content += f"\n[bold cyan]Key Changes:[/bold cyan]\n"
-        for k in analysis.key_changes:
-            panel_content += f"  • {k}\n"
+            if analysis is not None:
+                bump_type = analysis.bump_type.upper()
+                next_ver = updater.calculate_next_version(current_ver, analysis.bump_type)
 
-    console.print(Panel(panel_content, title=f"[{bump_color}]AI Recommendation: {bump_type}[/{bump_color}]", expand=False))
+                color_map = {
+                    "MAJOR": "bold red",
+                    "MINOR": "bold yellow",
+                    "PATCH": "bold green",
+                    "NONE": "bold white"
+                }
+                bump_color = color_map.get(bump_type, "bold cyan")
+
+                # 6. Display recommendation
+                panel_content = (
+                    f"[bold]Current Version:[/bold] {current_ver}\n"
+                    f"[bold]Suggested Version:[/bold] [{bump_color}]{next_ver}[/{bump_color}]  ([bold]{bump_type}[/bold] shift)\n"
+                    f"[bold]Confidence:[/bold] {analysis.confidence * 100:.1f}%\n"
+                )
+
+                suggested_msg = getattr(analysis, "commit_message", "") if analysis else ""
+                if suggested_msg:
+                    panel_content += f"[bold]Suggested Commit Message:[/bold] [bold green]{suggested_msg}[/bold green]\n"
+
+                panel_content += f"\n[bold]Reasoning:[/bold]\n{analysis.reasoning}\n"
+
+                if analysis.breaking_changes:
+                    panel_content += f"\n[bold red]Breaking Changes Detected:[/bold red]\n"
+                    for b in analysis.breaking_changes:
+                        panel_content += f"  • [red]{b}[/red]\n"
+
+                if analysis.key_changes:
+                    panel_content += f"\n[bold cyan]Key Changes:[/bold cyan]\n"
+                    for k in analysis.key_changes:
+                        panel_content += f"  • {k}\n"
+
+                console.print(Panel(panel_content, title=f"[{bump_color}]AI Recommendation: {bump_type}[/{bump_color}]", expand=False))
 
     # Display targets to update
     console.print("\n[bold]Files to update:[/bold]")
@@ -260,7 +335,9 @@ def execute_shift(
     # 7. Interactive Stage-by-Stage Confirmation (skipped if --yes)
     chosen_ver = next_ver
     do_commit = commit
-    commit_msg = f"chore(release): shift version to {next_ver}"
+    ai_commit_msg = (getattr(analysis, "commit_message", "") or "").strip() if analysis else ""
+    commit_msg = ai_commit_msg or f"chore(release): shift version to {next_ver}"
+    stage_all_modified = True
     do_tag = tag
     do_push = push
 
@@ -284,24 +361,33 @@ def execute_shift(
             f" [bold cyan]Stage 2 (Git Commit)[/bold cyan]: Create Git commit for this release?",
             default=commit
         )
+        if do_commit:
+            has_dirty = git_ops.has_uncommitted_changes()
+            if has_dirty:
+                stage_all_modified = Confirm.ask(
+                    f"   Include all other modified workspace files in this commit?",
+                    default=True
+                )
+            else:
+                stage_all_modified = False
 
         # Stage 3: Commit Message [y/n]
         if do_commit:
-            default_msg = f"chore(release): shift version to {chosen_ver}"
+            msg_label = "AI-suggested message" if ai_commit_msg else "default message"
             use_default_msg = Confirm.ask(
-                f" [bold cyan]Stage 3 (Commit Message)[/bold cyan]: Use default message: [dim]'{default_msg}'[/dim]?",
+                f" [bold cyan]Stage 3 (Commit Message)[/bold cyan]: Use {msg_label}: [bold green]'{commit_msg}'[/bold green]?",
                 default=True
             )
             if not use_default_msg:
-                commit_msg = typer.prompt("  Enter custom commit message", default=default_msg).strip()
-            else:
-                commit_msg = default_msg
+                commit_msg = typer.prompt("  Enter custom commit message", default=commit_msg).strip()
 
         # Stage 4: Git Tag [y/n]
         tag_name = f"v{chosen_ver}"
+        tag_already_exists = git_ops.tag_exists(tag_name)
+        tag_notice = " [bold red](Notice: Tag already exists locally)[/bold red]" if tag_already_exists else ""
         do_tag = Confirm.ask(
-            f" [bold cyan]Stage 4 (Git Tag)[/bold cyan]: Create Git tag [bold cyan]{tag_name}[/bold cyan]?",
-            default=tag
+            f" [bold cyan]Stage 4 (Git Tag)[/bold cyan]: Create Git tag [bold cyan]{tag_name}[/bold cyan]?{tag_notice}",
+            default=(tag and not tag_already_exists)
         )
 
         # Stage 5: Git Push [y/n]
@@ -325,7 +411,7 @@ def execute_shift(
 
     # 9. Git Commit
     if updated_files and do_commit:
-        if git_ops.commit_version_bump(updated_files, chosen_ver, stage_all=True, message=commit_msg):
+        if git_ops.commit_version_bump(updated_files, chosen_ver, stage_all=stage_all_modified, message=commit_msg):
             console.print(f"  Git committed: '[green]{commit_msg}[/green]'")
         else:
             console.print("  Git commit skipped or no changes staged.")
@@ -334,11 +420,12 @@ def execute_shift(
     tag_created = False
     if do_tag:
         tag_name = f"v{chosen_ver}"
-        if git_ops.create_git_tag(tag_name):
-            console.print(f"  Created Git Tag: [bold cyan]{tag_name}[/bold cyan]")
+        tag_ok, tag_msg = git_ops.create_git_tag(tag_name)
+        if tag_ok:
+            console.print(f"  [bold green]Created Git Tag:[/bold green] [bold cyan]{tag_name}[/bold cyan]")
             tag_created = True
         else:
-            console.print(f"  Could not create Git tag {tag_name}")
+            console.print(f"  [yellow]Tag notice:[/yellow] {tag_msg}")
 
     # 11. Git Push to Remote
     if do_push and (do_commit or tag_created):
@@ -367,6 +454,7 @@ def main(ctx: typer.Context):
                 f"Configured Provider: [bold green]{def_prov}[/bold green] (Model: [yellow]{def_model}[/yellow])\n\n"
                 "[bold yellow]Commands:[/bold yellow]\n"
                 "  • [bold green]shift-this-version shift[/bold green]           ➔ Analyze diff with AI & shift version\n"
+                "  • [bold green]shift-this-version shift --manual[/bold green]  ➔ Interactive SemVer shift without AI\n"
                 "  • [bold green]shift-this-version shift --dry-run[/bold green] ➔ Preview AI recommendation safely\n"
                 "  • [bold green]shift-this-version inspect[/bold green]         ➔ Inspect Git state, diff & version files\n"
                 "  • [bold green]shift-this-version config[/bold green]          ➔ Reconfigure AI provider, model, or host\n"
@@ -399,6 +487,7 @@ def show_help(
                 "  --yes, -y       : Skip confirmation prompts (for CI/CD pipelines)\n"
                 "  --host          : Custom Host / Base URL for Ollama, LM Studio, or vLLM\n"
                 "  --var           : Target specific variable names in code (e.g. VERSION, APP_VERSION)\n"
+                "  --manual        : Run in manual mode (select Patch/Minor/Major interactively without AI)\n"
                 "  --no-tag        : Disable automatic Git tag creation\n"
                 "  --no-commit     : Disable automatic Git commit creation",
                 title="[bold green]Command: shift[/bold green]",
@@ -428,11 +517,13 @@ def show_help(
         "[bold cyan]shift-this-version[/bold cyan] - Smart SemVer Bumper driven by Code Diff & AI\n\n"
         "[bold yellow]Commands:[/bold yellow]\n"
         "  • [bold green]shift-this-version shift[/bold green]           ➔ Analyze diff with AI, bump version & push\n"
+        "  • [bold green]shift-this-version shift --manual[/bold green]  ➔ Interactive SemVer bump without AI\n"
         "  • [bold green]shift-this-version shift --dry-run[/bold green] ➔ Preview AI recommendation without modifying files\n"
         "  • [bold green]shift-this-version shift -y[/bold green]        ➔ Non-interactive auto-confirm (for CI/CD)\n"
         "  • [bold green]shift-this-version inspect[/bold green]         ➔ Inspect Git diff, history, and version targets\n"
         "  • [bold green]shift-this-version config[/bold green]          ➔ Change default provider, model, or host\n\n"
         "[bold yellow]Optional Overrides:[/bold yellow]\n"
+        "  $ shift-this-version shift --manual\n"
         "  $ shift-this-version shift -p gemini\n"
         "  $ shift-this-version shift -p openrouter -m anthropic/claude-3.5-haiku\n"
         "  $ shift-this-version shift --no-push",
@@ -490,9 +581,10 @@ def inspect():
     """Scan and display Git history, diff preview, and detected version files/variables."""
     latest_tag = git_ops.get_latest_tag()
     commits = git_ops.get_commits_since(latest_tag)
-    diff = git_ops.get_filtered_diff(latest_tag)
-    diff_stat = git_ops.get_diff_stat(latest_tag)
     targets = updater.find_version_targets()
+    diff_stat = git_ops.get_diff_stat(latest_tag)
+    sample_label, sample_diff = git_ops.get_latest_diff_sample(latest_tag)
+    total_diff = git_ops.get_filtered_diff(latest_tag)
 
     # 1. Git State
     console.print("\n[bold blue]── 1. Git State ──────────────────────────────────────────[/bold blue]")
@@ -532,10 +624,6 @@ def inspect():
         if len(commits) > 10:
             console.print(f"  ... and {len(commits) - 10} more commits.")
 
-    diff_stat = git_ops.get_diff_stat(latest_tag)
-    sample_label, sample_diff = git_ops.get_latest_diff_sample(latest_tag)
-    total_diff = git_ops.get_filtered_diff(latest_tag)
-
     # 3. Changed Files (Diff Stat)
     if diff_stat:
         console.print("\n[bold yellow]── 3. Changed Files Summary ──────────────────────────────[/bold yellow]")
@@ -567,7 +655,8 @@ def shift_cmd(
     tag: bool = typer.Option(True, "--tag/--no-tag", help="Create a git tag for the new version"),
     commit: bool = typer.Option(True, "--commit/--no-commit", help="Commit updated version files"),
     push: bool = typer.Option(True, "--push/--no-push", help="Push commit and tag to remote git repository (default: True)"),
-    var_name: Optional[List[str]] = typer.Option(None, "--var", help="Custom variable name to update in code files (e.g. VERSION)")
+    var_name: Optional[List[str]] = typer.Option(None, "--var", help="Custom variable name to update in code files (e.g. VERSION)"),
+    manual: bool = typer.Option(False, "--manual", help="Run in manual SemVer shift mode without calling AI")
 ):
     """Analyze diff with AI and shift SemVer across all relevant files automatically."""
     execute_shift(
@@ -581,6 +670,7 @@ def shift_cmd(
         commit=commit,
         push=push,
         var_name=var_name,
+        manual=manual,
     )
 
 # Alias: bump -> shift (hidden command)
@@ -595,7 +685,8 @@ def bump_alias(
     tag: bool = typer.Option(True, "--tag/--no-tag"),
     commit: bool = typer.Option(True, "--commit/--no-commit"),
     push: bool = typer.Option(True, "--push/--no-push"),
-    var_name: Optional[List[str]] = typer.Option(None, "--var")
+    var_name: Optional[List[str]] = typer.Option(None, "--var"),
+    manual: bool = typer.Option(False, "--manual")
 ):
     execute_shift(
         provider=provider,
@@ -608,6 +699,7 @@ def bump_alias(
         commit=commit,
         push=push,
         var_name=var_name,
+        manual=manual,
     )
 
 if __name__ == "__main__":

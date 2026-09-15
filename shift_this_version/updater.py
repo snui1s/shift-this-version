@@ -74,21 +74,40 @@ def parse_semver(version_str: str) -> Tuple[int, int, int, Optional[str]]:
 def calculate_next_version(current_ver: str, bump_type: str) -> str:
     """คำนวณเลข SemVer ถัดไปตาม bump_type ('major', 'minor', 'patch', 'none')"""
     has_v_prefix = current_ver.startswith("v")
-    major, minor, patch, _ = parse_semver(current_ver)
+    major, minor, patch, prerelease = parse_semver(current_ver)
     
     bump = bump_type.lower()
-    if bump == "major":
-        next_ver = f"{major + 1}.0.0"
-    elif bump == "minor":
-        next_ver = f"{major}.{minor + 1}.0"
-    elif bump == "patch":
-        next_ver = f"{major}.{minor}.{patch + 1}"
-    elif bump == "none":
-        next_ver = f"{major}.{minor}.{patch}"
+    
+    # 1. กรณีไม่มีการเปลี่ยนเวอร์ชัน ให้คงค่าเดิมไว้ (รวมถึง prerelease)
+    if bump == "none":
+        return current_ver
+
+    # 2. กรณีเวอร์ชันปัจจุบันเป็น prerelease (เช่น 1.2.3-rc.1, 1.2.3-beta.2)
+    if prerelease:
+        if bump == "patch":
+            # ปล่อย stable patch จาก prerelease (1.2.3-rc.1 -> 1.2.3)
+            next_ver = f"{major}.{minor}.{patch}"
+        elif bump == "minor":
+            # ถ้าเป็น prerelease ของ minor อยู่แล้ว (เช่น 1.3.0-rc.1) -> 1.3.0
+            next_ver = f"{major}.{minor}.0" if (patch == 0 and minor > 0) else f"{major}.{minor + 1}.0"
+        elif bump == "major":
+            # ถ้าเป็น prerelease ของ major อยู่แล้ว (เช่น 2.0.0-rc.1) -> 2.0.0
+            next_ver = f"{major}.0.0" if (minor == 0 and patch == 0 and major > 0) else f"{major + 1}.0.0"
+        else:
+            raise ValueError(f"Unknown bump type: {bump_type}")
     else:
-        raise ValueError(f"Unknown bump type: {bump_type}")
+        # 3. กรณีปกติ (Stable release อยู่แล้ว)
+        if bump == "major":
+            next_ver = f"{major + 1}.0.0"
+        elif bump == "minor":
+            next_ver = f"{major}.{minor + 1}.0"
+        elif bump == "patch":
+            next_ver = f"{major}.{minor}.{patch + 1}"
+        else:
+            raise ValueError(f"Unknown bump type: {bump_type}")
         
     return f"v{next_ver}" if has_v_prefix else next_ver
+
 
 def find_version_targets(
     root_dir: Path = Path("."),
@@ -180,7 +199,7 @@ def apply_version_bump(
     dry_run: bool = False
 ) -> bool:
     """
-    เขียนเลขเวอร์ชันใหม่ลงในไฟล์เป้าหมาย
+    เขียนเลขเวอร์ชันใหม่ลงในไฟล์เป้าหมายอย่างแม่นยำด้วย Regex span
     """
     clean_new_ver = new_version.lstrip("v")
     try:
@@ -190,8 +209,41 @@ def apply_version_bump(
         target_idx = target.line_number - 1
         if 0 <= target_idx < len(lines):
             old_line = lines[target_idx]
-            # แทนที่เฉพาะเวอร์ชันเดิมในบรรทัดนั้น
-            new_line = old_line.replace(target.current_version, clean_new_ver, 1)
+            
+            # 1. ลองค้นหาด้วย pattern ที่ตรงกับ filename / config pattern
+            new_line = old_line
+            matched = False
+            for cfg in CONFIG_PATTERNS:
+                m = cfg["regex"].search(old_line)
+                if m and m.group("version") == target.current_version:
+                    start, end = m.span("version")
+                    new_line = old_line[:start] + clean_new_ver + old_line[end:]
+                    matched = True
+                    break
+
+            # 2. ถ้าไม่ใช่ config pattern ให้ลองค้นหาด้วย code var pattern
+            if not matched:
+                m = CODE_VAR_REGEX.search(old_line)
+                if m and m.group("version") == target.current_version:
+                    start, end = m.span("version")
+                    new_line = old_line[:start] + clean_new_ver + old_line[end:]
+                    matched = True
+
+            # 3. กรณีทั่วไป หา match ของ SEMVER_REGEX ที่มีค่าตรงกับ target.current_version
+            if not matched:
+                for m in re.finditer(SEMVER_REGEX, old_line):
+                    if m.group(0) == target.current_version:
+                        start, end = m.span(0)
+                        new_line = old_line[:start] + clean_new_ver + old_line[end:]
+                        matched = True
+                        break
+
+            # 4. Fallback ถ้า regex ไม่ตรง (เช่น format พิเศษ) ใช้ตำแหน่งสุดท้ายของ string ในบรรทัด
+            if not matched:
+                idx = old_line.rfind(target.current_version)
+                if idx != -1:
+                    new_line = old_line[:idx] + clean_new_ver + old_line[idx + len(target.current_version):]
+
             if old_line != new_line:
                 lines[target_idx] = new_line
                 if not dry_run:
