@@ -1,4 +1,7 @@
 import re
+import sys
+import shutil
+import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple, NamedTuple
 
@@ -270,3 +273,51 @@ def apply_version_bump(
     except Exception as e:
         print(f"Error updating {target.file_path}: {e}")
     return False
+
+def sync_lockfiles(root_dir: Path = Path(".")) -> List[str]:
+    """
+    Check if supported lockfiles (uv.lock, poetry.lock) exist in the project,
+    and refresh them so their internal package version matches the newly bumped version.
+    Returns a list of updated lockfile paths.
+    """
+    synced: List[str] = []
+
+    # 1. uv.lock
+    uv_lock = root_dir / "uv.lock"
+    if uv_lock.is_file():
+        uv_bin = shutil.which("uv")
+        if not uv_bin and sys.platform == "win32":
+            candidate = Path.home() / ".local" / "bin" / "uv.exe"
+            if candidate.is_file():
+                uv_bin = str(candidate)
+        if uv_bin:
+            try:
+                subprocess.run(
+                    [uv_bin, "lock"],
+                    cwd=str(root_dir),
+                    capture_output=True,
+                    timeout=20.0,
+                    check=True
+                )
+                synced.append(str(uv_lock))
+            except Exception:
+                pass
+
+    # 2. poetry.lock
+    poetry_lock = root_dir / "poetry.lock"
+    if poetry_lock.is_file():
+        poetry_bin = shutil.which("poetry")
+        if poetry_bin:
+            try:
+                subprocess.run(
+                    [poetry_bin, "lock", "--no-update"],
+                    cwd=str(root_dir),
+                    capture_output=True,
+                    timeout=25.0,
+                    check=True
+                )
+                synced.append(str(poetry_lock))
+            except Exception:
+                pass
+
+    return synced

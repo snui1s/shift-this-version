@@ -245,6 +245,12 @@ def test_additional_config_patterns(tmp_path: Path):
     apply_version_bump(target_map["pubspec.yaml"], "2.2.0")
     assert 'version: 2.2.0' in pubspec_file.read_text(encoding="utf-8")
 
+def test_sync_lockfiles(tmp_path: Path):
+    from shift_this_version.updater import sync_lockfiles
+    # Test directory without lockfiles returns empty list safely
+    synced = sync_lockfiles(root_dir=tmp_path)
+    assert synced == []
+
 def test_prompt_manual_bump():
     from shift_this_version import cli
     import typer
@@ -283,6 +289,9 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_additional_config_patterns(Path(tmp_dir))
     print("[PASS] test_additional_config_patterns passed")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_sync_lockfiles(Path(tmp_dir))
+    print("[PASS] test_sync_lockfiles passed")
     test_git_ops_tag_functions()
     print("[PASS] test_git_ops_tag_functions passed")
     test_prompt_manual_bump()

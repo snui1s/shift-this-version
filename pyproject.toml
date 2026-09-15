@@ -1,6 +1,6 @@
 [project]
 name = "shift-this-version"
-version = "1.4.0"
+version = "1.5.0"
 description = "Smart SemVer Bumper driven by Code Diff"
 readme = "README.md"
 authors = [

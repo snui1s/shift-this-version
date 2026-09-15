@@ -433,10 +433,11 @@ def execute_shift(
 
         # Stage 5: Git Push [y/n]
         if (do_commit or do_tag) and in_git:
+            active_branch = git_ops.get_current_branch()
             has_origin = git_ops.has_remote("origin")
             remote_notice = "" if has_origin else " [bold yellow](Notice: No remote 'origin' configured)[/bold yellow]"
             do_push = Confirm.ask(
-                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: Push commit and tag to remote repository (origin)?{remote_notice}",
+                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: Push commit and tag to remote repository (origin/{active_branch})?{remote_notice}",
                 default=(push and has_origin)
             )
         else:
@@ -451,6 +452,13 @@ def execute_shift(
             console.print(f"  [green]Updated[/green] [cyan]{t.file_path}[/cyan] -> [green]{chosen_ver}[/green]")
         else:
             console.print(f"  [red]Failed to update[/red] [cyan]{t.file_path}[/cyan]")
+
+    # 8.1 Sync lockfiles if present (e.g. uv.lock, poetry.lock)
+    synced_locks = updater.sync_lockfiles()
+    for lock_path in synced_locks:
+        if lock_path not in updated_files:
+            updated_files.append(lock_path)
+            console.print(f"  [green]Synced Lockfile[/green] [cyan]{lock_path}[/cyan] -> [green]{chosen_ver}[/green]")
 
     # 9. Git Commit
     if updated_files and do_commit:
