@@ -210,6 +210,26 @@ def test_git_ops_tag_functions():
     # ตรวจสอบ tag_exists สำหรับ tag ที่ไม่มีอยู่จริง
     assert git_ops.tag_exists("v999.999.999-nonexistent") is False
     # ตรวจสอบ create_git_tag รายงานผลแบบ tuple (bool, str)
+    # ตรวจสอบ format_tag_message
+    msg_simple = git_ops.format_tag_message("v1.2.0", "feat: my commit")
+    assert msg_simple == "Release v1.2.0: feat: my commit"
+
+    mock_analysis = BumpAnalysis(
+        bump_type="minor",
+        commit_message="feat(cli): add new feature",
+        reasoning="Added non-breaking features.",
+        breaking_changes=["Old API deprecated"],
+        key_changes=["Added support for XYZ", "Fixed ABC"],
+    )
+    msg_rich = git_ops.format_tag_message("v1.3.0", "feat(cli): add new feature", mock_analysis)
+    assert "Release v1.3.0: feat(cli): add new feature" in msg_rich
+    assert "BREAKING CHANGES:" in msg_rich
+    assert "• Old API deprecated" in msg_rich
+    assert "Changes:" in msg_rich
+    assert "• Added support for XYZ" in msg_rich
+    assert "AI Rationale (MINOR bump):" in msg_rich
+    assert "Added non-breaking features." in msg_rich
+
     latest = git_ops.get_latest_tag()
     if latest:
         ok, msg = git_ops.create_git_tag(latest)

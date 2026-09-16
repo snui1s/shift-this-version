@@ -472,7 +472,8 @@ def execute_shift(
     tag_created = False
     if do_tag:
         tag_name = f"v{chosen_ver}"
-        tag_ok, tag_msg = git_ops.create_git_tag(tag_name)
+        tag_msg_payload = git_ops.format_tag_message(tag_name, commit_msg=commit_msg, analysis=analysis)
+        tag_ok, tag_msg = git_ops.create_git_tag(tag_name, message=tag_msg_payload)
         if tag_ok:
             console.print(f"  [bold green]Created Git Tag:[/bold green] [bold cyan]{tag_name}[/bold cyan]")
             tag_created = True

@@ -1,5 +1,5 @@
 import subprocess
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 
 # Pathspec exclusions for noise files across all Git operations
 EXCLUDE_PATTERNS: List[str] = [
@@ -214,6 +214,56 @@ def commit_version_bump(files: List[str], version: str, stage_all: bool = False,
         return True
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
         return False
+
+def format_tag_message(
+    tag_name: str,
+    commit_msg: Optional[str] = None,
+    analysis: Optional[Any] = None,
+) -> str:
+    """
+    Format a rich, structured Git release tag message including:
+    - Release header and commit message
+    - Breaking changes (if any)
+    - Key changes / changelog items (if any)
+    - AI rationale (if available)
+    """
+    header = f"Release {tag_name}"
+    if commit_msg:
+        clean_commit = commit_msg.strip()
+        if clean_commit.lower().startswith(f"release {tag_name}".lower()):
+            header = clean_commit
+        else:
+            header = f"Release {tag_name}: {clean_commit}"
+
+    sections = [header]
+
+    if analysis:
+        # 1. Breaking changes
+        breaking = getattr(analysis, "breaking_changes", []) or []
+        if isinstance(breaking, str):
+            breaking = [breaking]
+        if breaking:
+            items = "\n".join(f"• {item.strip()}" for item in breaking if item.strip())
+            if items:
+                sections.append(f"\nBREAKING CHANGES:\n{items}")
+
+        # 2. Key changes
+        key_changes = getattr(analysis, "key_changes", []) or []
+        if isinstance(key_changes, str):
+            key_changes = [key_changes]
+        if key_changes:
+            items = "\n".join(f"• {item.strip()}" for item in key_changes if item.strip())
+            if items:
+                sections.append(f"\nChanges:\n{items}")
+
+        # 3. AI Rationale
+        reasoning = getattr(analysis, "reasoning", "") or ""
+        bump_type = getattr(analysis, "bump_type", "") or ""
+        if reasoning and reasoning.strip():
+            rationale_title = f"AI Rationale ({bump_type.upper()} bump):" if bump_type else "AI Rationale:"
+            sections.append(f"\n{rationale_title}\n{reasoning.strip()}")
+
+    return "\n".join(sections).strip()
 
 def create_git_tag(tag_name: str, message: Optional[str] = None) -> Tuple[bool, str]:
     """Create an annotated Git release tag (e.g. v1.2.0). Returns (success, message)."""
