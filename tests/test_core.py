@@ -205,8 +205,9 @@ def test_git_ops_tag_functions():
     from shift_this_version import git_ops
     # ตรวจสอบ is_git_repo ใน workspace ปัจจุบัน
     assert git_ops.is_git_repo() is True
-    # ตรวจสอบ has_remote
+    # ตรวจสอบ has_remote และ has_upstream_branch
     assert isinstance(git_ops.has_remote("origin"), bool)
+    assert isinstance(git_ops.has_upstream_branch(), bool)
     # ตรวจสอบ tag_exists สำหรับ tag ที่ไม่มีอยู่จริง
     assert git_ops.tag_exists("v999.999.999-nonexistent") is False
     # ตรวจสอบ create_git_tag รายงานผลแบบ tuple (bool, str)

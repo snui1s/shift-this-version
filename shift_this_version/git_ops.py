@@ -55,6 +55,14 @@ def has_remote(remote: str = "origin") -> bool:
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
         return False
 
+def has_upstream_branch() -> bool:
+    """Check if the current active branch has an upstream tracking branch configured."""
+    try:
+        output = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        return bool(output.strip())
+    except (subprocess.CalledProcessError, subprocess.SubprocessError):
+        return False
+
 def get_latest_tag() -> Optional[str]:
     """Retrieve the latest reachable Git tag from the current commit."""
     try:
@@ -280,15 +288,22 @@ def create_git_tag(tag_name: str, message: Optional[str] = None) -> Tuple[bool, 
         return False, str(e)
 
 def push_to_remote(tag_name: Optional[str] = None, remote: str = "origin") -> Tuple[bool, str]:
-    """Push current branch and release tag to remote git repository."""
+    """Push current branch and release tag to remote git repository.
+    Automatically sets upstream (-u) if branch is not yet published.
+    """
     branch = get_current_branch()
     try:
+        # If branch is not yet published, set upstream with -u
+        is_published = has_upstream_branch()
+        push_args = ["push", remote, branch] if is_published else ["push", "-u", remote, branch]
+
         # 1. Push branch (60s network timeout)
-        run_git(["push", remote, branch], timeout=60.0)
+        run_git(push_args, timeout=60.0)
         # 2. Push tag if created
         if tag_name:
             run_git(["push", remote, tag_name], timeout=60.0)
-        return True, f"{branch} & {tag_name or ''}".strip(" & ")
+        published_notice = " (published)" if not is_published else ""
+        return True, f"{branch}{published_notice} & {tag_name or ''}".strip(" & ")
     except subprocess.CalledProcessError as e:
         err_msg = str(e.stderr or e.stdout or str(e))
         return False, err_msg.strip()
