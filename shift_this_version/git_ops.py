@@ -1,5 +1,5 @@
 import subprocess
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 
 # Pathspec exclusions for noise files across all Git operations
 EXCLUDE_PATTERNS: List[str] = [
@@ -52,6 +52,14 @@ def has_remote(remote: str = "origin") -> bool:
     try:
         remotes = run_git(["remote"])
         return remote in remotes.split()
+    except (subprocess.CalledProcessError, subprocess.SubprocessError):
+        return False
+
+def has_upstream_branch() -> bool:
+    """Check if the current active branch has an upstream tracking branch configured."""
+    try:
+        output = run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        return bool(output.strip())
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
         return False
 
@@ -215,6 +223,56 @@ def commit_version_bump(files: List[str], version: str, stage_all: bool = False,
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
         return False
 
+def format_tag_message(
+    tag_name: str,
+    commit_msg: Optional[str] = None,
+    analysis: Optional[Any] = None,
+) -> str:
+    """
+    Format a rich, structured Git release tag message including:
+    - Release header and commit message
+    - Breaking changes (if any)
+    - Key changes / changelog items (if any)
+    - AI rationale (if available)
+    """
+    header = f"Release {tag_name}"
+    if commit_msg:
+        clean_commit = commit_msg.strip()
+        if clean_commit.lower().startswith(f"release {tag_name}".lower()):
+            header = clean_commit
+        else:
+            header = f"Release {tag_name}: {clean_commit}"
+
+    sections = [header]
+
+    if analysis:
+        # 1. Breaking changes
+        breaking = getattr(analysis, "breaking_changes", []) or []
+        if isinstance(breaking, str):
+            breaking = [breaking]
+        if breaking:
+            items = "\n".join(f"• {item.strip()}" for item in breaking if item.strip())
+            if items:
+                sections.append(f"\nBREAKING CHANGES:\n{items}")
+
+        # 2. Key changes
+        key_changes = getattr(analysis, "key_changes", []) or []
+        if isinstance(key_changes, str):
+            key_changes = [key_changes]
+        if key_changes:
+            items = "\n".join(f"• {item.strip()}" for item in key_changes if item.strip())
+            if items:
+                sections.append(f"\nChanges:\n{items}")
+
+        # 3. AI Rationale
+        reasoning = getattr(analysis, "reasoning", "") or ""
+        bump_type = getattr(analysis, "bump_type", "") or ""
+        if reasoning and reasoning.strip():
+            rationale_title = f"AI Rationale ({bump_type.upper()} bump):" if bump_type else "AI Rationale:"
+            sections.append(f"\n{rationale_title}\n{reasoning.strip()}")
+
+    return "\n".join(sections).strip()
+
 def create_git_tag(tag_name: str, message: Optional[str] = None) -> Tuple[bool, str]:
     """Create an annotated Git release tag (e.g. v1.2.0). Returns (success, message)."""
     if tag_exists(tag_name):
@@ -230,15 +288,22 @@ def create_git_tag(tag_name: str, message: Optional[str] = None) -> Tuple[bool, 
         return False, str(e)
 
 def push_to_remote(tag_name: Optional[str] = None, remote: str = "origin") -> Tuple[bool, str]:
-    """Push current branch and release tag to remote git repository."""
+    """Push current branch and release tag to remote git repository.
+    Automatically sets upstream (-u) if branch is not yet published.
+    """
     branch = get_current_branch()
     try:
+        # If branch is not yet published, set upstream with -u
+        is_published = has_upstream_branch()
+        push_args = ["push", remote, branch] if is_published else ["push", "-u", remote, branch]
+
         # 1. Push branch (60s network timeout)
-        run_git(["push", remote, branch], timeout=60.0)
+        run_git(push_args, timeout=60.0)
         # 2. Push tag if created
         if tag_name:
             run_git(["push", remote, tag_name], timeout=60.0)
-        return True, f"{branch} & {tag_name or ''}".strip(" & ")
+        published_notice = " (published)" if not is_published else ""
+        return True, f"{branch}{published_notice} & {tag_name or ''}".strip(" & ")
     except subprocess.CalledProcessError as e:
         err_msg = str(e.stderr or e.stdout or str(e))
         return False, err_msg.strip()

@@ -435,9 +435,11 @@ def execute_shift(
         if (do_commit or do_tag) and in_git:
             active_branch = git_ops.get_current_branch()
             has_origin = git_ops.has_remote("origin")
+            has_upstream = git_ops.has_upstream_branch()
+            action_label = "Publish & push" if not has_upstream else "Push"
             remote_notice = "" if has_origin else " [bold yellow](Notice: No remote 'origin' configured)[/bold yellow]"
             do_push = Confirm.ask(
-                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: Push commit and tag to remote repository (origin/{active_branch})?{remote_notice}",
+                f" [bold cyan]Stage 5 (Git Push)[/bold cyan]: {action_label} commit and tag to remote repository (origin/{active_branch})?{remote_notice}",
                 default=(push and has_origin)
             )
         else:
@@ -472,7 +474,8 @@ def execute_shift(
     tag_created = False
     if do_tag:
         tag_name = f"v{chosen_ver}"
-        tag_ok, tag_msg = git_ops.create_git_tag(tag_name)
+        tag_msg_payload = git_ops.format_tag_message(tag_name, commit_msg=commit_msg, analysis=analysis)
+        tag_ok, tag_msg = git_ops.create_git_tag(tag_name, message=tag_msg_payload)
         if tag_ok:
             console.print(f"  [bold green]Created Git Tag:[/bold green] [bold cyan]{tag_name}[/bold cyan]")
             tag_created = True
