@@ -5,8 +5,9 @@ shift-this-version: Smart SemVer Bumper driven by Code Diff & AI
 from .analyzer import analyze, BumpAnalysis
 from .updater import calculate_next_version, find_version_targets, apply_version_bump, VersionTarget
 from .git_ops import get_filtered_diff, get_commits_since, get_latest_tag, get_diff_summary
+from .check_update import check_for_update_notice, is_newer_version
 
-__version__ = "1.6.1"
+__version__ = "1.7.0"
 
 __all__ = [
     "analyze",
@@ -19,5 +20,7 @@ __all__ = [
     "get_commits_since",
     "get_latest_tag",
     "get_diff_summary",
+    "check_for_update_notice",
+    "is_newer_version",
     "__version__"
 ]

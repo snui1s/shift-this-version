@@ -1,3 +1,5 @@
+import os
+import tempfile
 import subprocess
 from typing import List, Tuple, Optional, Any
 
@@ -105,6 +107,74 @@ def get_uncommitted_diff() -> str:
         except (subprocess.CalledProcessError, subprocess.SubprocessError):
             return ""
 
+def get_uncommitted_diff_with_untracked() -> str:
+    """
+    Extract diff of uncommitted working tree changes, including untracked (new) files,
+    using an isolated temporary Git index file so it remains 100% read-only and non-destructive.
+    """
+    dirty = get_dirty_files()
+    has_untracked = any(status == "??" for status, _ in dirty)
+    if not has_untracked:
+        return get_uncommitted_diff()
+
+    temp_fd, temp_index_path = tempfile.mkstemp(prefix="git_index_temp_")
+    os.close(temp_fd)
+
+    try:
+        env = os.environ.copy()
+        env["GIT_INDEX_FILE"] = temp_index_path
+
+        has_head = True
+        try:
+            run_git(["rev-parse", "--verify", "HEAD"])
+        except (subprocess.CalledProcessError, subprocess.SubprocessError):
+            has_head = False
+
+        if has_head:
+            try:
+                subprocess.run(
+                    ["git", "read-tree", "HEAD"],
+                    env=env,
+                    capture_output=True,
+                    check=True,
+                    timeout=15.0
+                )
+            except Exception:
+                pass
+
+        subprocess.run(
+            ["git", "add", "-A"],
+            env=env,
+            capture_output=True,
+            check=True,
+            timeout=20.0
+        )
+
+        diff_cmd = ["git", "diff", "--cached"]
+        if has_head:
+            diff_cmd.insert(2, "HEAD")
+        diff_cmd += ["--"] + EXCLUDE_PATTERNS
+
+        res = subprocess.run(
+            diff_cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=30.0
+        )
+        return res.stdout or ""
+    except Exception:
+        return get_uncommitted_diff()
+    finally:
+        try:
+            if os.path.exists(temp_index_path):
+                os.remove(temp_index_path)
+        except Exception:
+            pass
+
 def get_filtered_diff(tag: Optional[str]) -> str:
     """
     Extract source code Git diff excluding noise files.
@@ -129,22 +199,28 @@ def get_diff_stat(tag: Optional[str]) -> str:
     except (subprocess.CalledProcessError, subprocess.SubprocessError):
         return ""
 
-def get_diff_summary(tag: Optional[str], max_chars: int = 15000) -> str:
+def get_diff_summary(
+    tag: Optional[str],
+    include_uncommitted: bool = True,
+    max_chars: int = 15000
+) -> str:
     """
-    Retrieve diff intelligently separated into committed vs uncommitted changes,
-    truncated if exceeding max_chars to prevent token overflow.
+    Retrieve diff intelligently separated into committed vs uncommitted changes.
+    If include_uncommitted is True, includes uncommitted edits and untracked files.
+    If include_uncommitted is False, only includes committed changes (tag..HEAD).
+    Truncated if exceeding max_chars to prevent token overflow.
     """
     committed_diff = get_committed_diff(tag)
-    uncommitted_diff = get_uncommitted_diff()
+    uncommitted_diff = get_uncommitted_diff_with_untracked() if include_uncommitted else ""
 
     sections = []
+    if uncommitted_diff.strip():
+        sections.append(f"=== Uncommitted Working Tree Edits (Modified & New Files) ===\n{uncommitted_diff}")
     if committed_diff.strip():
         sections.append(f"=== Committed Changes ({tag or 'initial'}..HEAD) ===\n{committed_diff}")
-    if uncommitted_diff.strip():
-        sections.append(f"=== Uncommitted Working Tree Edits ===\n{uncommitted_diff}")
 
     raw_diff = "\n\n".join(sections)
-    if not raw_diff:
+    if not raw_diff and include_uncommitted:
         # Fallback to standard filtered diff if revision range is empty
         raw_diff = get_filtered_diff(tag)
     
@@ -317,14 +393,14 @@ def get_latest_diff_sample(tag: Optional[str]) -> Tuple[str, str]:
     - If working tree is clean, return the diff of the latest commit.
     - Returns (label, diff_content)
     """
-    # 1. First priority: Uncommitted working tree edits (what user just modified)
+    # 1. First priority: Uncommitted working tree edits (what user just modified, including untracked)
     try:
-        uncommitted = run_git(["diff", "HEAD", "--"] + EXCLUDE_PATTERNS)
+        uncommitted = get_uncommitted_diff_with_untracked()
         if uncommitted.strip():
-            status_lines = [line.strip().split()[-1] for line in run_git(["status", "--porcelain"]).split("\n") if line.strip()]
-            files_str = ", ".join(status_lines[:3])
-            if len(status_lines) > 3:
-                files_str += f" (+{len(status_lines)-3} more)"
+            dirty = get_dirty_files()
+            files_str = ", ".join(f for _, f in dirty[:3])
+            if len(dirty) > 3:
+                files_str += f" (+{len(dirty)-3} more)"
             return f"Latest Uncommitted Changes ({files_str})", uncommitted
     except Exception:
         pass
