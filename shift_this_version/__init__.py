@@ -7,7 +7,7 @@ from .updater import calculate_next_version, find_version_targets, apply_version
 from .git_ops import get_filtered_diff, get_commits_since, get_latest_tag, get_diff_summary
 from .check_update import check_for_update_notice, is_newer_version
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 
 __all__ = [
     "analyze",

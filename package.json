@@ -1,0 +1,40 @@
+{
+  "name": "shift-this-version",
+  "version": "1.8.0",
+  "description": "Smart SemVer Bumper driven by Code Diff & AI",
+  "main": "./bin/run.js",
+  "bin": {
+    "shift-this-version": "./bin/run.js"
+  },
+  "scripts": {
+    "start": "node ./bin/run.js"
+  },
+  "keywords": [
+    "semver",
+    "ai",
+    "version",
+    "bump",
+    "git",
+    "release",
+    "conventional-commits",
+    "llm",
+    "diff"
+  ],
+  "author": "snui1s <snailsqz@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snui1s/shift-this-version.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snui1s/shift-this-version/issues"
+  },
+  "homepage": "https://github.com/snui1s/shift-this-version#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ]
+}
