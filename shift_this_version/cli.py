@@ -19,7 +19,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from shift_this_version import git_ops, analyzer, updater, config
+from shift_this_version import git_ops, analyzer, updater, config, check_update, __version__
 
 try:
     from dotenv import load_dotenv
@@ -163,24 +163,37 @@ def run_setup_wizard():
         expand=False
     ))
 
-def prompt_manual_bump(current_ver: str) -> str:
-    """Prompt user to select SemVer bump level manually without AI."""
+def prompt_version_selection(
+    current_ver: str,
+    recommended_bump: str = "patch",
+    title: str = "Version Selection"
+) -> str:
+    """Prompt user to select SemVer bump level (Patch, Minor, Major, Custom, Cancel) with default recommendation."""
     patch_v = updater.calculate_next_version(current_ver, "patch")
     minor_v = updater.calculate_next_version(current_ver, "minor")
     major_v = updater.calculate_next_version(current_ver, "major")
 
-    console.print(Panel(
-        f"[bold]Current Version:[/bold] [bold yellow]{current_ver}[/bold yellow]\n\n"
-        f"  [bold cyan][1] Patch[/bold cyan]  ➔ [bold green]{patch_v}[/bold green]  [dim](Bug fixes, backwards-compatible)[/dim]\n"
-        f"  [bold cyan][2] Minor[/bold cyan]  ➔ [bold green]{minor_v}[/bold green]  [dim](New features, backwards-compatible)[/dim]\n"
-        f"  [bold cyan][3] Major[/bold cyan]  ➔ [bold green]{major_v}[/bold green]  [dim](Breaking changes, major redesign)[/dim]\n"
-        f"  [bold cyan][4] Custom[/bold cyan] ➔ [dim]Enter a custom version string[/dim]\n"
-        f"  [bold red][0] Cancel[/bold red]",
-        title="[bold blue]Manual Version Shift (No AI)[/bold blue]",
-        expand=False
-    ))
+    bump_lower = recommended_bump.lower()
+    default_opt = "1"
+    rec_tags = {"patch": "", "minor": "", "major": ""}
+    if bump_lower == "major":
+        default_opt = "3"
+        rec_tags["major"] = " [bold green]★ AI Recommended[/bold green]"
+    elif bump_lower == "minor":
+        default_opt = "2"
+        rec_tags["minor"] = " [bold green]★ AI Recommended[/bold green]"
+    elif bump_lower == "patch":
+        default_opt = "1"
+        rec_tags["patch"] = " [bold green]★ AI Recommended[/bold green]"
 
-    choice = typer.prompt("Select bump level [1/2/3/4/0]", default="1").strip()
+    console.print(f"\n [bold cyan]{title}[/bold cyan] (Current: [yellow]{current_ver}[/yellow]):")
+    console.print(f"   [bold cyan][1] Patch[/bold cyan]  ➔ [bold white]{patch_v}[/bold white]{rec_tags['patch']}  [dim](Bug fixes, backwards-compatible)[/dim]")
+    console.print(f"   [bold cyan][2] Minor[/bold cyan]  ➔ [bold white]{minor_v}[/bold white]{rec_tags['minor']}  [dim](New features, backwards-compatible)[/dim]")
+    console.print(f"   [bold cyan][3] Major[/bold cyan]  ➔ [bold white]{major_v}[/bold white]{rec_tags['major']}  [dim](Breaking changes, major redesign)[/dim]")
+    console.print(f"   [bold cyan][4] Custom[/bold cyan] ➔ [dim]Enter a custom version string[/dim]")
+    console.print(f"   [bold red][0] Cancel[/bold red]")
+
+    choice = typer.prompt(" Select version option [1/2/3/4/0]", default=default_opt).strip()
     if choice == "1":
         return patch_v
     elif choice == "2":
@@ -188,7 +201,7 @@ def prompt_manual_bump(current_ver: str) -> str:
     elif choice == "3":
         return major_v
     elif choice == "4":
-        custom = typer.prompt("Enter custom version").strip()
+        custom = typer.prompt("   Enter custom version").strip()
         if not custom:
             console.print("[yellow]Aborted.[/yellow]")
             raise typer.Exit(code=0)
@@ -196,6 +209,14 @@ def prompt_manual_bump(current_ver: str) -> str:
     else:
         console.print("[yellow]Aborted by user.[/yellow]")
         raise typer.Exit(code=0)
+
+def prompt_manual_bump(current_ver: str) -> str:
+    """Prompt user to select SemVer bump level manually without AI."""
+    return prompt_version_selection(
+        current_ver,
+        recommended_bump="patch",
+        title="Manual Version Shift (No AI)"
+    )
 
 def execute_shift(
     provider: Optional[str] = "auto",
@@ -212,12 +233,13 @@ def execute_shift(
 ):
     """Core logic to analyze diff with AI and shift SemVer across targets."""
     console.print("\n[bold blue]Starting Smart SemVer Shift[/bold blue]")
+    check_update.show_update_notification_if_available(console, __version__)
 
-    # 1. Inspect Git status and diff
+    # 1. Inspect Git status and workspace changes
     in_git = git_ops.is_git_repo()
     latest_tag = git_ops.get_latest_tag() if in_git else None
     commits = git_ops.get_commits_since(latest_tag) if in_git else []
-    diff = git_ops.get_diff_summary(latest_tag, max_chars=18000) if in_git else ""
+    dirty_files = git_ops.get_dirty_files() if in_git else []
 
     if not in_git:
         console.print("[bold yellow]Notice: Current directory is not a Git repository.[/bold yellow]")
@@ -230,8 +252,42 @@ def execute_shift(
             else:
                 console.print("[red]Cannot run AI diff analysis outside a Git repository.[/red]")
                 raise typer.Exit(code=1)
-    elif not diff and not commits:
-        console.print("[yellow]No commits or diff changes detected since the last release.[/yellow]")
+
+    # 1.1 Pre-AI Scope Decision: Decide whether to include uncommitted workspace changes (modified & new files)
+    stage_all_modified = True
+    if in_git and dirty_files:
+        console.print(f"\n[bold yellow]Workspace Changes Detected ({len(dirty_files)} file{'s' if len(dirty_files) > 1 else ''}):[/bold yellow]")
+        status_map = {
+            "M": ("[yellow]modified[/yellow]", "~"),
+            "A": ("[green]added[/green]", "+"),
+            "D": ("[red]deleted[/red]", "-"),
+            "??": ("[bold green]new file[/bold green]", "+"),
+            "R": ("[cyan]renamed[/cyan]", "→"),
+        }
+        for status, file_path in dirty_files[:15]:
+            label, symbol = status_map.get(status, (f"[cyan]{status}[/cyan]", "*"))
+            console.print(f"  {symbol} {label}: [white]{file_path}[/white]")
+        if len(dirty_files) > 15:
+            console.print(f"  ... and {len(dirty_files) - 15} more files.")
+
+        if not yes:
+            stage_all_modified = Confirm.ask(
+                f"\n[bold cyan]Include all {len(dirty_files)} workspace changes (modified & new files) in this release & AI analysis?[/bold cyan]",
+                default=True
+            )
+        else:
+            stage_all_modified = True
+    elif in_git and not dirty_files:
+        stage_all_modified = False
+
+    # 1.2 Extract diff strictly scoped to user's decision (with read-only untracked support)
+    diff = git_ops.get_diff_summary(latest_tag, include_uncommitted=stage_all_modified, max_chars=18000) if in_git else ""
+
+    if in_git and not diff and not commits:
+        if dirty_files and not stage_all_modified:
+            console.print("[yellow]No committed changes detected since the last release (workspace changes were excluded).[/yellow]")
+        else:
+            console.print("[yellow]No commits or diff changes detected since the last release.[/yellow]")
         raise typer.Exit(code=0)
 
     # 2. Find version targets
@@ -337,28 +393,14 @@ def execute_shift(
 
                 console.print(Panel(panel_content, title=f"[{bump_color}]AI Recommendation: {bump_type}[/{bump_color}]", expand=False))
 
-    dirty_files = git_ops.get_dirty_files() if in_git else []
-
     # Display targets to update
     console.print("\n[bold]Version Targets to Update:[/bold]")
     for t in targets:
         console.print(f"  • [bold white]{t.file_path}[/bold white]:{t.line_number} ([yellow]{t.current_version}[/yellow] -> [bold green]{next_ver}[/bold green])")
 
-    # Display detected workspace changes (modified, added, deleted, untracked)
     if dirty_files:
-        console.print(f"\n[bold yellow]Workspace Changes Detected ({len(dirty_files)} file{'s' if len(dirty_files) > 1 else ''}):[/bold yellow]")
-        status_map = {
-            "M": ("[yellow]modified[/yellow]", "~"),
-            "A": ("[green]added[/green]", "+"),
-            "D": ("[red]deleted[/red]", "-"),
-            "??": ("[bold green]new file[/bold green]", "+"),
-            "R": ("[cyan]renamed[/cyan]", "→"),
-        }
-        for status, file_path in dirty_files[:20]:
-            label, symbol = status_map.get(status, (f"[cyan]{status}[/cyan]", "*"))
-            console.print(f"  {symbol} {label}: [white]{file_path}[/white]")
-        if len(dirty_files) > 20:
-            console.print(f"  ... and {len(dirty_files) - 20} more files.")
+        scope_status = "[bold green]included[/bold green]" if stage_all_modified else "[yellow]excluded[/yellow]"
+        console.print(f"  [dim]Workspace changes: {len(dirty_files)} file(s) ({scope_status} in release)[/dim]")
 
     if bump_type == "NONE" or current_ver == next_ver:
         console.print("\n[green]No version shift required.[/green]")
@@ -373,39 +415,30 @@ def execute_shift(
     do_commit = commit
     ai_commit_msg = (getattr(analysis, "commit_message", "") or "").strip() if analysis else ""
     commit_msg = ai_commit_msg or f"chore(release): shift version to {next_ver}"
-    stage_all_modified = True
     do_tag = tag
     do_push = push
 
     if not yes:
         console.print("\n[bold yellow]── Release Confirmation Stages ───────────────────────────[/bold yellow]")
 
-        # Stage 1: Version Confirmation
-        confirm_ver = Confirm.ask(
-            f" [bold cyan]Stage 1 (Version)[/bold cyan]: Shift version to [bold green]{next_ver}[/bold green] across {len(targets)} targets?",
-            default=True
+        # Stage 1: Version Selection
+        chosen_ver = prompt_version_selection(
+            current_ver,
+            recommended_bump=bump_type,
+            title=f"Stage 1 (Version Selection across {len(targets)} target{'s' if len(targets) > 1 else ''})"
         )
-        if not confirm_ver:
-            custom_v = typer.prompt("  Enter custom version (press Enter to cancel)", default="").strip()
-            if not custom_v:
-                console.print("[yellow]Aborted by user.[/yellow]")
-                raise typer.Exit(code=0)
-            chosen_ver = custom_v
+        if chosen_ver != next_ver and ai_commit_msg:
+            commit_msg = ai_commit_msg.replace(next_ver, chosen_ver)
+        else:
+            commit_msg = ai_commit_msg or f"chore(release): shift version to {chosen_ver}"
 
         # Stage 2: Git Commit [y/n]
         if in_git:
+            scope_hint = f" (including {len(dirty_files)} workspace changes)" if (dirty_files and stage_all_modified) else ""
             do_commit = Confirm.ask(
-                f" [bold cyan]Stage 2 (Git Commit)[/bold cyan]: Create Git commit for this release?",
+                f" [bold cyan]Stage 2 (Git Commit)[/bold cyan]: Create Git commit for this release{scope_hint}?",
                 default=commit
             )
-            if do_commit:
-                if dirty_files:
-                    stage_all_modified = Confirm.ask(
-                        f"   Include all {len(dirty_files)} workspace changes (modified & new files) in this commit?",
-                        default=True
-                    )
-                else:
-                    stage_all_modified = False
         else:
             do_commit = False
 
@@ -497,6 +530,7 @@ def execute_shift(
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
     """Smart SemVer Bumper driven by Code Diff & AI"""
+    check_update.show_update_notification_if_available(console, __version__)
     if ctx.invoked_subcommand is None:
         if config.is_first_run():
             run_setup_wizard()
@@ -634,6 +668,7 @@ def format_diff_with_colors(diff_text: str, max_lines: int = 40) -> str:
 @app.command()
 def inspect():
     """Scan and display Git history, diff preview, and detected version files/variables."""
+    check_update.show_update_notification_if_available(console, __version__)
     in_git = git_ops.is_git_repo()
     targets = updater.find_version_targets()
 

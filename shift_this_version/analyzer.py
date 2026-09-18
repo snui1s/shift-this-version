@@ -134,6 +134,10 @@ Your task is to analyze the provided Git commit logs and code diff, and decide w
 - "patch": Backwards-compatible bug fixes, minor refactoring, dependency updates, internal optimizations, or documentation changes.
 - "none": No functional code or behavior changes warranting a version increment.
 
+Important context on CLI tools & Applications:
+- If the project is a CLI tool or application (indicated by CLI arguments, Typer/Click/Argparse, or executable entrypoints), user-facing backwards compatibility is determined primarily by the CLI commands, options, and workflow.
+- Internal refactoring or changes to private/internal helper functions within a CLI tool are NOT breaking changes if the CLI command-line behavior remains compatible; classify them as "minor" (if adding new features/options) or "patch" (if refactoring/fixes), NOT "major".
+
 Also formulate a clear, concise Conventional Commit message (e.g., "feat: ...", "fix: ...", "refactor: ...") that accurately summarizes the overall code diff.
 
 Analyze with strict attention to public API contracts, function signatures, and exported variables.
@@ -287,7 +291,7 @@ def call_gemini(diff: str, commits: List[str], api_key: str, model: str = "gemin
         }],
         "generationConfig": {
             "response_mime_type": "application/json",
-            "temperature": 0.1
+            "temperature": 0.0
         }
     }
     with httpx.Client(timeout=60.0) as client:
@@ -314,7 +318,7 @@ def call_anthropic(diff: str, commits: List[str], api_key: str, model: str = "cl
         "messages": [
             {"role": "user", "content": user_content}
         ],
-        "temperature": 0.1
+        "temperature": 0.0
     }
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(url, headers=headers, json=payload)
@@ -349,7 +353,7 @@ def call_openai_compatible(
             {"role": "user", "content": user_content}
         ],
         "response_format": {"type": "json_object"},
-        "temperature": 0.1
+        "temperature": 0.0
     }
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(url, headers=headers, json=payload)
@@ -386,7 +390,7 @@ def call_ollama(diff: str, commits: List[str], host: str = "http://localhost:114
         ],
         "format": "json",
         "stream": False,
-        "options": {"temperature": 0.1}
+        "options": {"temperature": 0.0}
     }
     with httpx.Client(timeout=90.0) as client:
         resp = client.post(url, json=payload)
