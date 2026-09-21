@@ -6,11 +6,13 @@ Comprehensive guide and reference for using `shift-this-version` from the comman
 
 ## Table of Contents
 1. [First-Time Setup Wizard](#1-first-time-setup-wizard)
-2. [Command: `inspect`](#2-command-inspect)
-3. [Command: `shift`](#3-command-shift)
-4. [Command: `help`](#4-command-help)
-5. [Advanced Options & Providers](#5-advanced-options--providers)
-6. [CI/CD Integration](#6-cicd-integration)
+2. [Command: `inspect` (aliases: `status`, `check`)](#2-command-inspect-aliases-status-check)
+3. [Command: `doctor` (System & Config Diagnostics)](#command-doctor-system--config-diagnostics)
+4. [Command: `update` (Check & Self-Upgrade)](#command-update-check--self-upgrade)
+5. [Command: `shift`](#3-command-shift)
+6. [Command: `help`](#4-command-help)
+7. [Advanced Options & Providers](#5-advanced-options--providers)
+8. [CI/CD Integration](#6-cicd-integration)
 
 ---
 
@@ -41,12 +43,15 @@ shift-this-version
 
 ---
 
-## 2. Command: `inspect`
+## 2. Command: `inspect` (aliases: `status`, `check`)
 
 Scan Git history, commit count, code diff preview, and all detected version files and variables:
 
 ```bash
 shift-this-version inspect
+# or intuitive developer aliases:
+shift-this-version status
+shift-this-version check
 ```
 
 ### Sample Output:
@@ -144,18 +149,63 @@ After choosing, it flows directly into the 5 discrete release confirmation stage
 
 ---
 
+## Command: `doctor` (System & Config Diagnostics)
+
+Run comprehensive environment, Git, and AI diagnostics:
+
+```bash
+shift-this-version doctor
+```
+
+Checks performed:
+- **Git Executable & Repo**: Verifies `git` is on PATH, directory is inside a repository, and checks remote connectivity.
+- **Version Targets**: Detects version files (`pyproject.toml`, `package.json`, etc.) and verifies that versions across targets are in sync.
+- **AI Provider & Key**: Verifies active provider, model, API key configuration, and pings host (e.g. Ollama or custom endpoints).
+- **Update Check**: Verifies if your installed version matches the latest PyPI release.
+
+---
+
+## Command: `update` (Check & Self-Upgrade)
+
+Check for new releases and upgrade `shift-this-version` in place:
+
+```bash
+# Check PyPI and prompt for automatic upgrade:
+shift-this-version update
+
+# Check for updates only without installing:
+shift-this-version update --check
+
+# Upgrade without interactive confirmation (for scripts / CI):
+shift-this-version update -y
+```
+
+*(Note: `shift-this-version upgrade` is available as an alias.)*
+
+---
+
 ## 4. Command: `help`
 
 Display usage guide and command syntax:
 
 ```bash
-# General help and examples
+# General help and examples (supports both -h and --help)
 shift-this-version help
+shift-this-version -h
+shift-this-version --help
 
 # Command-specific help
 shift-this-version help shift
 shift-this-version help inspect
+shift-this-version help doctor
+shift-this-version help update
 shift-this-version help config
+
+# Show version
+shift-this-version --version
+# or aliases:
+shift-this-version -v
+shift-this-version --v
 ```
 
 ---

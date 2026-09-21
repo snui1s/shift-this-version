@@ -289,6 +289,58 @@ def test_prompt_manual_bump():
     finally:
         typer.prompt = orig_prompt
 
+def test_cli_version_flag():
+    from typer.testing import CliRunner
+    from shift_this_version import cli, __version__
+    runner = CliRunner()
+    res = runner.invoke(cli.app, ["--version"])
+    assert res.exit_code == 0
+    assert __version__ in res.output
+
+    res_short = runner.invoke(cli.app, ["-v"])
+    assert res_short.exit_code == 0
+    assert __version__ in res_short.output
+
+    res_typo = runner.invoke(cli.app, ["--v"])
+    assert res_typo.exit_code == 0
+    assert __version__ in res_typo.output
+
+def test_cli_help_flag():
+    from typer.testing import CliRunner
+    from shift_this_version import cli
+    runner = CliRunner()
+    res_h = runner.invoke(cli.app, ["-h"])
+    assert res_h.exit_code == 0
+    assert "Usage" in res_h.output or "shift-this-version" in res_h.output
+
+    res_help = runner.invoke(cli.app, ["--help"])
+    assert res_help.exit_code == 0
+
+def test_cli_status_and_check():
+    from typer.testing import CliRunner
+    from shift_this_version import cli
+    runner = CliRunner()
+    res_status = runner.invoke(cli.app, ["status"])
+    assert res_status.exit_code == 0
+
+    res_check = runner.invoke(cli.app, ["check"])
+    assert res_check.exit_code == 0
+
+def test_cli_doctor():
+    from typer.testing import CliRunner
+    from shift_this_version import cli
+    runner = CliRunner()
+    res = runner.invoke(cli.app, ["doctor"])
+    assert res.exit_code == 0
+    assert "Diagnostics" in res.output
+
+def test_cli_update_check():
+    from typer.testing import CliRunner
+    from shift_this_version import cli
+    runner = CliRunner()
+    res = runner.invoke(cli.app, ["update", "--check"])
+    assert res.exit_code == 0
+
 if __name__ == "__main__":
     import tempfile
     test_calculate_next_version()
@@ -317,6 +369,16 @@ if __name__ == "__main__":
     print("[PASS] test_git_ops_tag_functions passed")
     test_prompt_manual_bump()
     print("[PASS] test_prompt_manual_bump passed")
+    test_cli_version_flag()
+    print("[PASS] test_cli_version_flag passed")
+    test_cli_help_flag()
+    print("[PASS] test_cli_help_flag passed")
+    test_cli_status_and_check()
+    print("[PASS] test_cli_status_and_check passed")
+    test_cli_doctor()
+    print("[PASS] test_cli_doctor passed")
+    test_cli_update_check()
+    print("[PASS] test_cli_update_check passed")
     print("\nAll unit tests passed successfully!")
 
 

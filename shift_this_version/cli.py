@@ -1,5 +1,7 @@
 import os
 import sys
+import shutil
+import subprocess
 from typing import List, Optional
 from pathlib import Path
 import typer
@@ -30,7 +32,8 @@ except ImportError:
 app = typer.Typer(
     name="shift-this-version",
     help="Smart SemVer Bumper driven by Code Diff & AI (Gemini, Anthropic, OpenAI, DeepSeek, Groq, OpenRouter, Ollama)",
-    no_args_is_help=False
+    no_args_is_help=False,
+    context_settings={"help_option_names": ["-h", "--help"]}
 )
 console = Console(force_terminal=True, color_system="auto")
 
@@ -525,10 +528,25 @@ def execute_shift(
         else:
             console.print(f"  [yellow]Push skipped or remote notice:[/yellow] {msg}")
 
-    console.print(f"\n[bold green]Successfully shifted version to {chosen_ver}![/bold green]\n")
+def version_callback(value: bool):
+    """Show the application version and exit."""
+    if value:
+        console.print(f"[bold cyan]shift-this-version[/bold cyan] [bold green]{__version__}[/bold green]", highlight=False)
+        raise typer.Exit()
 
 @app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
+def main(
+    ctx: typer.Context,
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        "--v",
+        help="Show version and exit.",
+        callback=version_callback,
+        is_eager=True,
+    ),
+):
     """Smart SemVer Bumper driven by Code Diff & AI"""
     check_update.show_update_notification_if_available(console, __version__)
     if ctx.invoked_subcommand is None:
@@ -543,10 +561,11 @@ def main(ctx: typer.Context):
                 f"Configured Provider: [bold green]{def_prov}[/bold green] (Model: [yellow]{def_model}[/yellow])\n\n"
                 "[bold yellow]Commands:[/bold yellow]\n"
                 "  • [bold green]shift-this-version shift[/bold green]           ➔ Analyze diff with AI & shift version\n"
-                "  • [bold green]shift-this-version shift --manual[/bold green]  ➔ Interactive SemVer shift without AI\n"
-                "  • [bold green]shift-this-version shift --dry-run[/bold green] ➔ Preview AI recommendation safely\n"
-                "  • [bold green]shift-this-version inspect[/bold green]         ➔ Inspect Git state, diff & version files\n"
+                "  • [bold green]shift-this-version status[/bold green]          ➔ Inspect Git state, diff & version targets\n"
+                "  • [bold green]shift-this-version doctor[/bold green]          ➔ Check Git, version targets, AI key & network\n"
+                "  • [bold green]shift-this-version update[/bold green]          ➔ Check and upgrade to latest release\n"
                 "  • [bold green]shift-this-version config[/bold green]          ➔ Reconfigure AI provider, model, or host\n"
+                "  • [bold green]shift-this-version --version[/bold green]       ➔ Show version number\n"
                 "  • [bold green]shift-this-version help[/bold green]            ➔ Show detailed command guide",
                 title="[bold blue]shift-this-version[/bold blue]",
                 expand=False
@@ -559,7 +578,7 @@ def configure():
 
 @app.command("help")
 def show_help(
-    command: Optional[str] = typer.Argument(None, help="Specific command name (e.g. shift, inspect, config)")
+    command: Optional[str] = typer.Argument(None, help="Specific command name (e.g. shift, inspect, doctor, update, config)")
 ):
     """Show detailed guide for all commands or a specific command."""
     if command:
@@ -583,11 +602,30 @@ def show_help(
                 expand=False
             ))
             return
-        elif cmd_name == "inspect":
+        elif cmd_name in ("inspect", "status", "check"):
             console.print(Panel(
-                "[bold cyan]shift-this-version inspect[/bold cyan]\n"
+                "[bold cyan]shift-this-version inspect (aliases: status, check)[/bold cyan]\n"
                 "Scan repository for Git status, recent commits, diff, and all detected version targets.",
-                title="[bold green]Command: inspect[/bold green]",
+                title="[bold green]Command: inspect / status / check[/bold green]",
+                expand=False
+            ))
+            return
+        elif cmd_name == "doctor":
+            console.print(Panel(
+                "[bold cyan]shift-this-version doctor[/bold cyan]\n"
+                "Run diagnostic checks on Git, project version files, AI configuration, and update status.",
+                title="[bold green]Command: doctor[/bold green]",
+                expand=False
+            ))
+            return
+        elif cmd_name in ("update", "upgrade"):
+            console.print(Panel(
+                "[bold cyan]shift-this-version update (alias: upgrade)[/bold cyan]\n"
+                "Check PyPI for the latest version and upgrade shift-this-version.\n\n"
+                "[bold yellow]Options:[/bold yellow]\n"
+                "  --check     : Check for updates without installing\n"
+                "  --yes, -y   : Automatically accept upgrade prompt",
+                title="[bold green]Command: update[/bold green]",
                 expand=False
             ))
             return
@@ -606,11 +644,11 @@ def show_help(
         "[bold cyan]shift-this-version[/bold cyan] - Smart SemVer Bumper driven by Code Diff & AI\n\n"
         "[bold yellow]Commands:[/bold yellow]\n"
         "  • [bold green]shift-this-version shift[/bold green]           ➔ Analyze diff with AI, bump version & push\n"
-        "  • [bold green]shift-this-version shift --manual[/bold green]  ➔ Interactive SemVer bump without AI\n"
-        "  • [bold green]shift-this-version shift --dry-run[/bold green] ➔ Preview AI recommendation without modifying files\n"
-        "  • [bold green]shift-this-version shift -y[/bold green]        ➔ Non-interactive auto-confirm (for CI/CD)\n"
-        "  • [bold green]shift-this-version inspect[/bold green]         ➔ Inspect Git diff, history, and version targets\n"
-        "  • [bold green]shift-this-version config[/bold green]          ➔ Change default provider, model, or host\n\n"
+        "  • [bold green]shift-this-version status[/bold green]          ➔ Inspect Git diff, history, and version targets (alias)\n"
+        "  • [bold green]shift-this-version doctor[/bold green]          ➔ Diagnose Git, version files, AI & connectivity\n"
+        "  • [bold green]shift-this-version update[/bold green]          ➔ Check and upgrade to latest release\n"
+        "  • [bold green]shift-this-version config[/bold green]          ➔ Change default provider, model, or host\n"
+        "  • [bold green]shift-this-version --version[/bold green]       ➔ Show application version number (-v, --v)\n\n"
         "[bold yellow]Optional Overrides:[/bold yellow]\n"
         "  $ shift-this-version shift --manual\n"
         "  $ shift-this-version shift -p gemini\n"
@@ -810,6 +848,175 @@ def bump_alias(
         var_name=var_name,
         manual=manual,
     )
+
+@app.command("status")
+def status_cmd():
+    """Scan repository for Git status, recent commits, diff, and detected version targets (alias for inspect)."""
+    inspect()
+
+@app.command("check")
+def check_cmd():
+    """Scan repository for Git status, recent commits, diff, and detected version targets (alias for inspect)."""
+    inspect()
+
+@app.command("doctor")
+def doctor():
+    """Run diagnostic checks on Git, project version files, AI configuration, and update status."""
+    console.print("\n[bold blue]=== shift-this-version System Diagnostics (doctor) ===[/bold blue]\n")
+
+    # 1. Git Environment
+    git_bin = shutil.which("git")
+    if git_bin:
+        console.print(f"  [bold green]✔[/bold green] Git Executable: [cyan]{git_bin}[/cyan]")
+    else:
+        console.print("  [bold red]✖[/bold red] Git Executable: [red]Not found on PATH[/red]")
+
+    in_git = git_ops.is_git_repo()
+    if in_git:
+        latest_tag = git_ops.get_latest_tag()
+        commits = git_ops.get_commits_since(latest_tag)
+        console.print(f"  [bold green]✔[/bold green] Git Repository: [cyan]Detected[/cyan] (Latest tag: [yellow]{latest_tag or 'None (initial)'}[/yellow], Ahead: [yellow]{len(commits)} commit(s)[/yellow])")
+        try:
+            remotes = git_ops.run_git(["remote", "-v"])
+            if remotes.strip():
+                first_remote = remotes.strip().split("\n")[0].split()[0]
+                console.print(f"  [bold green]✔[/bold green] Git Remote: [cyan]{first_remote}[/cyan]")
+            else:
+                console.print("  [bold yellow]⚠[/bold yellow] Git Remote: [yellow]No remote configured[/yellow]")
+        except Exception:
+            console.print("  [bold yellow]⚠[/bold yellow] Git Remote: [yellow]Unable to query remotes[/yellow]")
+    else:
+        console.print("  [bold yellow]⚠[/bold yellow] Git Repository: [yellow]Current directory is not a Git repository[/yellow]")
+
+    # 2. Version Targets in Workspace
+    targets = updater.find_version_targets()
+    if targets:
+        versions = {t.current_version for t in targets}
+        target_files = [f"{t.file_path.name}:{t.line_number}" for t in targets]
+        if len(versions) == 1:
+            ver = list(versions)[0]
+            console.print(f"  [bold green]✔[/bold green] Version Targets: [cyan]{len(targets)} target(s) in sync[/cyan] (v{ver} in {', '.join(target_files[:3])}{'...' if len(target_files) > 3 else ''})")
+        else:
+            console.print(f"  [bold yellow]⚠[/bold yellow] Version Targets: [yellow]{len(targets)} targets with mismatched versions: {versions}[/yellow]")
+    else:
+        console.print("  [bold yellow]⚠[/bold yellow] Version Targets: [yellow]No version files (package.json, pyproject.toml, etc.) detected[/yellow]")
+
+    # 3. AI Configuration & Connectivity
+    cfg = config.load_config()
+    provider = cfg.get("default_provider", "auto")
+    model = cfg.get("models", {}).get(provider, "default")
+    api_key = analyzer.get_key_for_provider(provider) if provider != "auto" else None
+    host = cfg.get("hosts", {}).get(provider, "")
+
+    console.print(f"  [bold green]✔[/bold green] AI Provider: [cyan]{provider}[/cyan] (Model: [yellow]{model}[/yellow])")
+
+    if provider == "ollama":
+        ollama_host = host or "http://localhost:11434"
+        console.print(f"    Target Host: [dim]{ollama_host}[/dim]")
+        try:
+            import httpx
+            resp = httpx.get(f"{ollama_host.rstrip('/')}/api/tags", timeout=2.5)
+            if resp.status_code == 200:
+                console.print("  [bold green]✔[/bold green] Ollama Server: [bold green]Reachable & responsive[/bold green]")
+            else:
+                console.print(f"  [bold yellow]⚠[/bold yellow] Ollama Server: [yellow]Responded with HTTP {resp.status_code}[/yellow]")
+        except Exception as e:
+            console.print(f"  [bold red]✖[/bold red] Ollama Server: [red]Could not connect to {ollama_host} ({e})[/red]")
+    elif provider == "custom":
+        if host:
+            console.print(f"    Base URL: [dim]{host}[/dim]")
+            try:
+                import httpx
+                resp = httpx.get(host.rstrip("/"), timeout=2.5)
+                console.print(f"  [bold green]✔[/bold green] Custom Endpoint: [bold green]Reachable (HTTP {resp.status_code})[/bold green]")
+            except Exception as e:
+                console.print(f"  [bold yellow]⚠[/bold yellow] Custom Endpoint: [yellow]Ping warning ({e})[/yellow]")
+        else:
+            console.print("  [bold yellow]⚠[/bold yellow] Custom Endpoint: [yellow]No Base URL configured[/yellow]")
+    else:
+        # Cloud providers
+        if api_key:
+            masked = api_key[:4] + "..." + api_key[-4:] if len(api_key) > 8 else "***"
+            console.print(f"  [bold green]✔[/bold green] API Key: [cyan]{masked}[/cyan]")
+        else:
+            console.print(f"  [bold yellow]⚠[/bold yellow] API Key: [yellow]No API key configured for '{provider}' (Run 'shift-this-version config')[/yellow]")
+
+    # 4. Package Release & Update Check
+    console.print(f"  [bold green]✔[/bold green] Installed Version: [cyan]v{__version__}[/cyan]")
+    try:
+        latest = check_update.fetch_latest_pypi_version(timeout=2.5)
+        if latest:
+            if check_update.is_newer_version(__version__, latest):
+                console.print(f"  [bold yellow]⚠[/bold yellow] Latest PyPI Release: [bold yellow]v{latest}[/bold yellow] (Update available! Run 'shift-this-version update')")
+            else:
+                console.print(f"  [bold green]✔[/bold green] PyPI Release Status: [bold green]Up to date[/bold green]")
+        else:
+            console.print("  [dim]• PyPI Release Status: Unable to reach PyPI (offline or timeout)[/dim]")
+    except Exception:
+        pass
+
+    console.print("\n[bold green]Diagnostics complete![/bold green]\n")
+
+@app.command("update")
+def update_cmd(
+    check: bool = typer.Option(False, "--check", help="Check for updates without installing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Automatic yes to upgrade prompt")
+):
+    """Check PyPI for the latest version and upgrade shift-this-version."""
+    console.print(f"\nChecking for updates (current version: [cyan]v{__version__}[/cyan])...")
+    latest = check_update.fetch_latest_pypi_version(timeout=4.0)
+    if not latest:
+        console.print("[yellow]Could not reach PyPI to check for updates. Please check your internet connection.[/yellow]\n")
+        return
+
+    if not check_update.is_newer_version(__version__, latest):
+        console.print(f"[bold green]shift-this-version is already up to date (v{__version__})![/bold green]\n")
+        return
+
+    console.print(Panel(
+        f"[bold yellow]New version available![/bold yellow]\n"
+        f"Installed: [dim]v{__version__}[/dim]\n"
+        f"Latest:    [bold green]v{latest}[/bold green]",
+        title="[bold green]Update Found[/bold green]",
+        expand=False
+    ))
+
+    if check:
+        console.print("Run [bold cyan]shift-this-version update[/bold cyan] to perform the upgrade.\n")
+        return
+
+    if shutil.which("uv"):
+        upgrade_cmd = ["uv", "tool", "update", "shift-this-version"]
+    elif shutil.which("pipx"):
+        upgrade_cmd = ["pipx", "upgrade", "shift-this-version"]
+    else:
+        upgrade_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "shift-this-version"]
+
+    cmd_str = " ".join(upgrade_cmd)
+    if not yes:
+        proceed = Confirm.ask(f"Do you want to upgrade now using '{cmd_str}'?", default=True)
+        if not proceed:
+            console.print("[yellow]Upgrade cancelled.[/yellow]\n")
+            return
+
+    console.print(f"\nRunning upgrade: [cyan]{cmd_str}[/cyan]...")
+    try:
+        res = subprocess.run(upgrade_cmd, check=False)
+        if res.returncode == 0:
+            console.print(f"\n[bold green]Successfully upgraded shift-this-version to v{latest}![/bold green]\n")
+        else:
+            console.print(f"\n[bold red]Upgrade command exited with code {res.returncode}.[/bold red]")
+            console.print(f"You can try running manually: [cyan]{cmd_str}[/cyan]\n")
+    except Exception as e:
+        console.print(f"[red]Error executing upgrade: {e}[/red]\n")
+
+@app.command("upgrade", hidden=True)
+def upgrade_alias(
+    check: bool = typer.Option(False, "--check", help="Check for updates without installing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Automatic yes to upgrade prompt")
+):
+    """Alias for update."""
+    update_cmd(check=check, yes=yes)
 
 if __name__ == "__main__":
     app()

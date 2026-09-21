@@ -146,6 +146,12 @@ function fallbackToStandaloneBinary(userArgs) {
 function main() {
   const userArgs = process.argv.slice(2);
 
+  // Fast-path: --version, -v, or --v
+  if (userArgs.length === 1 && (userArgs[0] === '--version' || userArgs[0] === '-v' || userArgs[0] === '--v')) {
+    console.log(`shift-this-version ${VERSION}`);
+    return;
+  }
+
   // Strategy 1: uvx (fastest, runs modern python tool without touching system python)
   if (commandExists('uvx')) {
     return runCommand('uvx', [`shift-this-version@${VERSION}`, ...userArgs]);
