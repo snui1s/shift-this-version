@@ -12,7 +12,7 @@ The tool updates version fields in standard project configurations (`pyproject.t
 - [Install](#install)
 - [Usage](#usage)
   - [1. First-Time Setup Wizard](#1-first-time-setup-wizard)
-  - [2. Inspect Repository](#2-inspect-repository)
+  - [2. Inspect Repository (status / check)](#2-inspect-repository-status--check)
   - [3. Shift Version](#3-shift-version)
     - [Standard Run (Zero Flags Needed)](#31-standard-run-zero-flags-needed)
     - [Dry-Run Mode](#32-dry-run-mode)
@@ -22,7 +22,9 @@ The tool updates version fields in standard project configurations (`pyproject.t
     - [Custom Code Variables](#36-custom-code-variables)
     - [Disable Commit, Tag, or Push](#37-disable-commit-tag-or-push)
     - [CI/CD Integration](#38-cicd-integration)
-  - [4. Command Reference](#4-command-reference)
+  - [4. Environment Diagnostics (doctor)](#4-environment-diagnostics-doctor)
+  - [5. Self-Update (update / upgrade)](#5-self-update-update--upgrade)
+  - [6. Command Reference](#6-command-reference)
 - [API](#api)
 - [Security](#security)
 - [Contributing](#contributing)
@@ -44,13 +46,16 @@ Traditional version-bumping tools either require manual developer input (e.g. ch
 - Python >= 3.10
 - Git CLI accessible in PATH
 
-### Via uv or pip
+### Via uv, pip, or npx
 ```sh
 # Install as a global CLI tool
 uv tool install shift-this-version
 
 # Or install via pip
 pip install shift-this-version
+
+# Or run instantly with zero installation via npx
+npx shift-this-version
 ```
 
 ### Local Development Setup
@@ -93,12 +98,16 @@ shift-this-version config
 
 ---
 
-### 2. Inspect Repository
+### 2. Inspect Repository (status / check)
 
 Verify the current Git state, recent commits, diff summary, and all detected version targets:
 
 ```sh
 shift-this-version inspect
+
+# Or use intuitive developer aliases:
+shift-this-version status
+shift-this-version check
 ```
 
 #### Sample Output:
@@ -311,18 +320,57 @@ jobs:
 
 ---
 
-### 4. Command Reference
+### 4. Environment Diagnostics (`doctor`)
 
-| Command | Description |
+Run an automated health check on your Git environment, project version targets, AI provider, and update status:
+
+```sh
+shift-this-version doctor
+```
+
+**What it verifies:**
+- **Git Executable & Repository:** Verifies `git` is accessible in PATH, checks whether the current directory is a repository, and displays remote status.
+- **Version Targets:** Detects all version files (`pyproject.toml`, `package.json`, `VERSION`, etc.) and verifies that version numbers are in sync.
+- **AI Provider & Connectivity:** Checks provider credentials, displays masked API key, and tests endpoint reachability (e.g. pinging local Ollama or custom endpoints).
+- **Update Check:** Verifies if your installed version matches the latest PyPI release.
+
+---
+
+### 5. Self-Update (`update` / `upgrade`)
+
+Check PyPI for newer versions and upgrade `shift-this-version` directly:
+
+```sh
+# Check PyPI and prompt for automatic upgrade:
+shift-this-version update
+
+# Check for updates only without installing:
+shift-this-version update --check
+
+# Non-interactive automatic upgrade (for CI/CD or automation):
+shift-this-version update -y
+```
+
+*(Note: `shift-this-version upgrade` is available as an alias.)*
+
+---
+
+### 6. Command Reference
+
+| Command / Flag | Description |
 | :--- | :--- |
 | `shift-this-version` | Run setup wizard on first run, or show provider status and commands overview |
 | `shift-this-version shift` | Analyze diff with AI and shift SemVer across targets |
 | `shift-this-version shift --manual` | Run interactive SemVer bump without AI |
 | `shift-this-version shift --dry-run` | Preview AI recommendation without modifying files |
 | `shift-this-version shift -y` | Non-interactive auto-confirm mode for CI/CD |
-| `shift-this-version inspect` | Inspect Git diff, commit history, and detected version targets |
+| `shift-this-version inspect` | Inspect Git diff, commit history, and detected version targets (aliases: `status`, `check`) |
+| `shift-this-version doctor` | Run environment diagnostics (Git, version files, AI key/host connectivity, update check) |
+| `shift-this-version update` | Check PyPI and self-upgrade to the latest release (alias: `upgrade`, flags: `--check`, `-y`) |
 | `shift-this-version config` | Reconfigure default provider, API key, model, or host |
-| `shift-this-version help` | Display detailed command guide and usage examples |
+| `shift-this-version --version` | Display version number (convenience aliases: `-v`, `--v`) |
+| `shift-this-version -h` | Display usage guide and options (alias: `--help`) |
+| `shift-this-version help [cmd]` | Display detailed command guide and usage examples |
 
 ---
 
