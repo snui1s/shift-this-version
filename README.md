@@ -10,6 +10,7 @@ The tool updates version fields in standard project configurations (`pyproject.t
 
 - [Background](#background)
 - [Install](#install)
+- [Uninstall](#uninstall)
 - [Usage](#usage)
   - [1. First-Time Setup Wizard](#1-first-time-setup-wizard)
   - [2. Inspect Repository (status / check)](#2-inspect-repository-status--check)
@@ -43,16 +44,26 @@ Traditional version-bumping tools either require manual developer input (e.g. ch
 ## Install
 
 ### Requirements
-- Python >= 3.10
 - Git CLI accessible in PATH
+- Python >= 3.10 (for uv/pip) or Node.js >= 16 (for npm/npx)
+- *(Note: Standalone installer via `irm` does not require Python or Node.js)*
 
-### Via uv, pip, or npx
+### Quick Install (Windows PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/snui1s/shift-this-version/main/install.ps1 | iex
+```
+
+### Via uv, pip, npm, or npx
 ```sh
 # Install as a global CLI tool
 uv tool install shift-this-version
 
 # Or install via pip
 pip install shift-this-version
+
+# Or install via npm
+npm i shift-this-version
+# (or globally: npm i -g shift-this-version)
 
 # Or run instantly with zero installation via npx
 npx shift-this-version
@@ -63,6 +74,26 @@ npx shift-this-version
 git clone https://github.com/snui1s/shift-this-version.git
 cd shift-this-version
 uv sync
+```
+
+## Uninstall
+
+### Quick Uninstall (Windows PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/snui1s/shift-this-version/main/uninstall.ps1 | iex
+```
+
+### Via uv, pip, or npm
+```sh
+# If installed via uv
+uv tool uninstall shift-this-version
+
+# If installed via pip
+pip uninstall shift-this-version
+
+# If installed via npm
+npm uninstall -g shift-this-version
+# (or locally: npm uninstall shift-this-version)
 ```
 
 ## Usage
