@@ -13,21 +13,28 @@ jobs:
   build-binaries:
     name: Build (${{ matrix.os }} - ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             arch: x64
+            target_name: shift-this-version-windows-x64
             binary_name: shift-this-version-windows-x64.exe
           - os: ubuntu-latest
             arch: x64
+            target_name: shift-this-version-linux-x64
             binary_name: shift-this-version-linux-x64
           - os: macos-latest
             arch: arm64
+            target_name: shift-this-version-macos-arm64
             binary_name: shift-this-version-macos-arm64
           - os: macos-13
             arch: x64
+            target_name: shift-this-version-macos-x64
             binary_name: shift-this-version-macos-x64
 
     steps:
@@ -50,7 +57,7 @@ jobs:
       - name: Build Standalone Executable
         run: |
           uv run pyinstaller --onefile \
-            --name ${{ matrix.binary_name }} \
+            --name ${{ matrix.target_name }} \
             --hidden-import typer \
             --hidden-import rich \
             --hidden-import httpx \
