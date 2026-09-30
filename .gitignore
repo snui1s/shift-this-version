@@ -47,3 +47,7 @@ Desktop.ini
 # Private local scripts
 pypi_publish.py
 npm_publish.py
+
+# Omphalos Indexer Cache
+.omphcache
+.omphignore

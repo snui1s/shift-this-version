@@ -109,21 +109,26 @@ def show_update_notification_if_available(console: Console, current_ver: str) ->
     except Exception:
         pass
 
+from rich.box import ROUNDED
+
 def print_update_banner(console: Console, current_ver: str, latest_ver: str) -> None:
     """Render a sleek, eye-catching update notification panel using Rich (Windows-safe)."""
     try:
         content = (
-            f"[bold yellow]A new version of {PACKAGE_NAME} is available![/bold yellow] "
-            f"[dim]v{current_ver}[/dim] -> [bold green]v{latest_ver}[/bold green]\n\n"
-            f"[white]To update, run:[/white]\n"
-            f"  - [bold cyan]uv tool update {PACKAGE_NAME}[/bold cyan]   [dim](if installed via uv)[/dim]\n"
-            f"  - [bold cyan]pip install --upgrade {PACKAGE_NAME}[/bold cyan] [dim](if installed via pip)[/dim]"
+            f"[bold #fbbf24]A new version of {PACKAGE_NAME} is available![/bold #fbbf24] "
+            f"[dim]v{current_ver}[/dim] -> [bold #34d399]v{latest_ver}[/bold #34d399]\n\n"
+            f"[#cbd5e1]To update, run:[/#cbd5e1]\n"
+            f"  • [bold #38bdf8]shift-this-version update[/bold #38bdf8]\n"
+            f"  • [bold #38bdf8]uv tool update {PACKAGE_NAME}[/bold #38bdf8]   [dim](if installed via uv)[/dim]\n"
+            f"  • [bold #38bdf8]pip install --upgrade {PACKAGE_NAME}[/bold #38bdf8] [dim](if installed via pip)[/dim]"
         )
         console.print(Panel(
             content,
-            title="[bold yellow]Update Available[/bold yellow]",
-            border_style="yellow",
+            title="[bold #fbbf24]✦ Update Available ✦[/bold #fbbf24]",
+            border_style="#fbbf24",
+            box=ROUNDED,
             expand=False
         ))
     except Exception:
         pass
+

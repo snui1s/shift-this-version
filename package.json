@@ -1,6 +1,6 @@
 {
   "name": "shift-this-version",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Smart SemVer Bumper driven by Code Diff & AI",
   "main": "./bin/run.js",
   "bin": {
