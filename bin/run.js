@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
 const { spawn, spawnSync } = require('child_process');
@@ -32,7 +33,7 @@ function commandExists(cmd) {
   }
 }
 
-function runCommand(cmd, args) {
+function runCommand(cmd, args, isStandalone = false) {
   const child = spawn(cmd, args, { stdio: 'inherit' });
   child.on('exit', (code, signal) => {
     if (signal) {
@@ -42,7 +43,11 @@ function runCommand(cmd, args) {
     }
   });
   child.on('error', (err) => {
-    // If spawning failed, fallback to standalone binary
+    // If spawning failed, fallback to standalone binary (but never loop on the binary itself)
+    if (isStandalone) {
+      console.error(`[shift-this-version] Failed to run standalone binary: ${err.message}`);
+      process.exit(1);
+    }
     fallbackToStandaloneBinary(process.argv.slice(2));
   });
 }
@@ -102,6 +107,29 @@ function downloadFile(url, destPath, callback) {
   });
 }
 
+function fetchText(url, callback, redirects = 0) {
+  if (redirects > 5) return callback(new Error('Too many redirects'));
+  const client = url.startsWith('https') ? https : http;
+  client.get(url, (res) => {
+    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+      res.resume();
+      return fetchText(res.headers.location, callback, redirects + 1);
+    }
+    if (res.statusCode !== 200) {
+      res.resume();
+      return callback(new Error(`HTTP ${res.statusCode} from ${url}`));
+    }
+    let body = '';
+    res.setEncoding('utf8');
+    res.on('data', (c) => { body += c; });
+    res.on('end', () => callback(null, body));
+  }).on('error', callback);
+}
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
 function fallbackToStandaloneBinary(userArgs) {
   const binaryName = getBinaryName();
   if (!binaryName) {
@@ -115,31 +143,46 @@ function fallbackToStandaloneBinary(userArgs) {
 
   const cachedBinary = path.join(cacheDir, `v${VERSION}-${binaryName}`);
 
-  // 1. If already cached, run directly
+  // 1. If already cached (only verified binaries are ever moved here), run directly
   if (fs.existsSync(cachedBinary)) {
-    return runCommand(cachedBinary, userArgs);
+    return runCommand(cachedBinary, userArgs, true);
   }
 
-  // 2. Download from GitHub Release
+  // 2. Download from GitHub Release and verify its published SHA256 before use
   const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/${binaryName}`;
+  const tmpBinary = `${cachedBinary}.part`;
   console.error(`[shift-this-version] Python not detected. Fetching standalone binary (v${VERSION})...`);
 
-  downloadFile(downloadUrl, cachedBinary, (err) => {
-    if (err) {
-      console.error(`\n[shift-this-version] Error downloading standalone binary: ${err.message}`);
-      console.error('You can install shift-this-version via Python:');
-      console.error('  $ pip install shift-this-version');
-      console.error('  $ uv tool install shift-this-version\n');
-      process.exit(1);
-    }
+  const fail = (err) => {
+    fs.unlink(tmpBinary, () => {});
+    console.error(`\n[shift-this-version] Error downloading standalone binary: ${err.message}`);
+    console.error('You can install shift-this-version via Python:');
+    console.error('  $ pip install shift-this-version');
+    console.error('  $ uv tool install shift-this-version\n');
+    process.exit(1);
+  };
 
-    if (process.platform !== 'win32') {
-      try {
-        fs.chmodSync(cachedBinary, 0o755);
-      } catch (e) {}
-    }
+  fetchText(`${downloadUrl}.sha256`, (sumErr, sumText) => {
+    if (sumErr) return fail(new Error(`Could not fetch checksum (${sumErr.message}); refusing to run unverified binary`));
+    const expected = (sumText || '').trim().split(/\s+/)[0].toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(expected)) return fail(new Error('Invalid checksum file; refusing to run unverified binary'));
 
-    runCommand(cachedBinary, userArgs);
+    downloadFile(downloadUrl, tmpBinary, (err) => {
+      if (err) return fail(err);
+
+      const actual = sha256File(tmpBinary);
+      if (actual !== expected) {
+        return fail(new Error(`SHA256 mismatch (expected ${expected}, got ${actual}); binary discarded`));
+      }
+
+      if (process.platform !== 'win32') {
+        try {
+          fs.chmodSync(tmpBinary, 0o755);
+        } catch (e) {}
+      }
+      fs.renameSync(tmpBinary, cachedBinary);
+      runCommand(cachedBinary, userArgs, true);
+    });
   });
 }
 
