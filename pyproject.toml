@@ -1,7 +1,7 @@
 [project]
 name = "shift-this-version"
-version = "1.9.0"
-description = "Smart SemVer Bumper driven by Code Diff"
+version = "1.9.1"
+description = "Smart SemVer Bumper driven by Code Diff & AI"
 readme = "README.md"
 authors = [
     { name = "snui1s", email = "snailsqz@gmail.com" }

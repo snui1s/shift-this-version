@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -23,12 +24,29 @@ def load_config() -> Dict[str, Any]:
 def save_config(data: Dict[str, Any]) -> None:
     """บันทึกค่า config ลง ~/.shift-this-version/config.json"""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    # จำกัดสิทธิ์ไฟล์ให้อ่านได้เฉพาะเจ้าของ (ถ้าเป็นไปได้บน unix)
+    # Create the file owner-only from the start so API keys are never briefly world-readable
+    fd = os.open(CONFIG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2, ensure_ascii=False))
+    _restrict_permissions(CONFIG_FILE)
+
+def _restrict_permissions(path: Path) -> None:
+    """Best-effort: make the file readable only by the current user (POSIX chmod / Windows ACL)."""
     try:
-        CONFIG_FILE.chmod(0o600)
+        path.chmod(0o600)
     except Exception:
         pass
+    if os.name == "nt":
+        # chmod is a no-op for ACLs on Windows; drop inherited access and grant only the current user
+        try:
+            user = os.environ.get("USERNAME")
+            if user:
+                subprocess.run(
+                    ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+                    capture_output=True, timeout=10, check=False,
+                )
+        except Exception:
+            pass
 
 def is_first_run() -> bool:
     """ตรวจสอบว่าเป็นครั้งแรกที่รันเครื่องมือหรือไม่"""

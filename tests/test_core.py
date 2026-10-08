@@ -383,3 +383,16 @@ if __name__ == "__main__":
 
 
 
+
+def test_save_config_roundtrip_and_owner_only(tmp_path, monkeypatch):
+    import os
+    from shift_this_version import config
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path / "cfg")
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "cfg" / "config.json")
+    config.save_config({"keys": {"openai": "sk-test"}})
+    assert config.load_config() == {"keys": {"openai": "sk-test"}}
+    if os.name != "nt":
+        assert (config.CONFIG_FILE.stat().st_mode & 0o077) == 0
+    # overwriting a shorter config must not leave stale bytes behind
+    config.save_config({})
+    assert config.load_config() == {}
