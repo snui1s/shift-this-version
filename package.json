@@ -4,7 +4,7 @@
   "description": "Smart SemVer Bumper driven by Code Diff & AI",
   "main": "./bin/run.js",
   "bin": {
-    "shift-this-version": "./bin/run.js"
+    "shift-this-version": "bin/run.js"
   },
   "scripts": {
     "start": "node ./bin/run.js"
