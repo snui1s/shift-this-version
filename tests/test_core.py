@@ -184,8 +184,12 @@ def test_config_and_key_lookup(tmp_path: Path):
     finally:
         config.CONFIG_FILE = orig_file
 
-def test_ollama_and_provider_detection(tmp_path: Path):
+def test_ollama_and_provider_detection(tmp_path: Path, monkeypatch):
     from shift_this_version import analyzer, config
+    # A developer's .env (loaded by cli via python-dotenv) must not leak into this test
+    for prov in ("GEMINI", "ANTHROPIC", "OPENROUTER", "OPENAI", "DEEPSEEK", "GROQ", "CUSTOM"):
+        monkeypatch.delenv(f"{prov}_API_KEY", raising=False)
+        monkeypatch.delenv(f"SHIFT_{prov}_API_KEY", raising=False)
     # ทดสอบกรณีไม่มี provider ใดเลย และ Ollama ปิดอยู่
     config_file = tmp_path / "empty_config.json"
     orig_file = config.CONFIG_FILE
