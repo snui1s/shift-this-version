@@ -51,3 +51,9 @@ npm_publish.py
 # Omphalos Indexer Cache
 .omphcache
 .omphignore
+# demo artifacts
+demo/demo.cast
+demo/__pycache__/
+demo/_build/
+demo/demo.mp4
+demo/demo_terminal.mp4

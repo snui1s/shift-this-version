@@ -1,14 +1,77 @@
+<div align="center">
+
 # shift-this-version
 
-> Smart SemVer bumper driven by code diff and AI.
+**Stop guessing your next version. Let AI read your diff and pick `major`, `minor` or `patch`.**
 
-`shift-this-version` is an automated release utility that inspects Git diffs and commit histories since the last release tag. Using LLMs (Google Gemini, OpenRouter, OpenAI, DeepSeek, Groq, or local Ollama instances), it analyzes code modifications against the [SemVer 2.0.0](https://semver.org/) specification to recommend the appropriate version increment (`major`, `minor`, `patch`).
+[![PyPI](https://img.shields.io/pypi/v/shift-this-version?logo=pypi&logoColor=white)](https://pypi.org/project/shift-this-version/)
+[![npm](https://img.shields.io/npm/v/shift-this-version?logo=npm)](https://www.npmjs.com/package/shift-this-version)
+[![Tests](https://github.com/snui1s/shift-this-version/actions/workflows/test.yml/badge.svg)](https://github.com/snui1s/shift-this-version/actions/workflows/test.yml)
+[![Python](https://img.shields.io/pypi/pyversions/shift-this-version)](https://pypi.org/project/shift-this-version/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The tool updates version fields in standard project configurations (`pyproject.toml`, `package.json`, `Cargo.toml`, `setup.cfg`, `setup.py`, `composer.json`, `pubspec.yaml`) as well as designated version variables directly within source code (e.g., `VERSION = "1.0.0"`, `export const VERSION = "1.0.0"`, `__version__ = "1.0.0"`). It also manages Git commits, release tags, and remote pushes.
+</div>
+
+```sh
+npx shift-this-version
+```
+
+<p align="center"><img src="https://raw.githubusercontent.com/snui1s/shift-this-version/main/demo/demo_smooth.gif" alt="shift-this-version reads a diff, detects a removed public function and recommends a major bump from 1.4.2 to 2.0.0" width="820"></p>
+
+*A real run, not a mock-up: the commit says `fix:`, but the diff removes a public function. The tool recommends a major bump, updates `pyproject.toml`, commits and tags. (Output is revealed line by line so it is easy to follow.)*
+
+`shift-this-version` reads the **actual code diff** since your last release tag, asks an LLM (Gemini, Claude, OpenAI, DeepSeek, Groq, OpenRouter, or a local Ollama model) whether it is a breaking change, a feature, or a fix, then updates every version file, commits, tags and pushes, in one command.
+
+## Why
+
+Most version bumpers either ask you to decide by hand, or trust your commit messages. Both fail in the same way: a commit that says `fix:` but quietly removes a public function ships as a patch.
+
+| | Manual bump | Commit-message based tools | **shift-this-version** |
+| :--- | :---: | :---: | :---: |
+| Looks at the real code change | no | no | **yes** |
+| Needs Conventional Commits | no | yes | **no** |
+| Updates every version file for you | no | partly | **yes** (incl. `VERSION = "..."` in source) |
+| Explains *why* it picked a level | no | no | **yes** (reasoning + confidence) |
+| Works offline / without AI | yes | yes | **yes** (`--manual`) |
+| Your code can stay on your machine | yes | yes | **yes** (Ollama) |
+
+AI can be wrong, so it only *recommends*: you see the reasoning, the files that will change, and confirm each step. Use `--dry-run` to preview without touching anything.
+
+## Quick Start
+
+```sh
+# 1. Install (pick one)
+npx shift-this-version          # no install
+uv tool install shift-this-version
+pip install shift-this-version
+
+# 2. First run: pick a provider and paste an API key (or use local Ollama)
+shift-this-version
+
+# 3. In any git repo with a release tag:
+shift-this-version shift --dry-run   # preview, changes nothing
+shift-this-version shift             # bump, commit, tag, push
+```
+
+No API key? Run `shift-this-version shift --manual` to choose the level yourself and still get the multi-file update, commit, tag and push.
+
+## Features
+
+- **Diff-aware**: analyzes real code changes, ignoring lockfiles, minified bundles, docs and images; large diffs are summarized with `git diff --stat`.
+- **Multi-file**: `pyproject.toml`, `package.json`, `Cargo.toml`, `setup.cfg`, `setup.py`, `composer.json`, `pubspec.yaml`, plus version variables in source code (`__version__`, `export const VERSION`, ...). Syncs `uv.lock` / `poetry.lock`.
+- **Any LLM**: Gemini, Anthropic, OpenAI, DeepSeek, Groq, OpenRouter, Ollama, or any OpenAI-compatible endpoint.
+- **Safe by default**: dry-run, step-by-step confirmation, and automatic fallback to manual mode if the AI is unreachable.
+- **CI-friendly**: `--yes` for non-interactive pipelines, API keys via environment variables.
+- **Built-in tooling**: `doctor` (environment diagnostics), `status` (repo inspection), `update` (self-upgrade).
+- **Zero-Python option**: the `npx` wrapper falls back to a standalone binary (SHA256-verified) if Python is not installed.
+
+---
 
 ## Table of Contents
 
-- [Background](#background)
+- [Why](#why)
+- [Quick Start](#quick-start)
+- [Features](#features)
 - [Install](#install)
 - [Uninstall](#uninstall)
 - [Usage](#usage)
@@ -30,16 +93,6 @@ The tool updates version fields in standard project configurations (`pyproject.t
 - [Security](#security)
 - [Contributing](#contributing)
 - [License](#license)
-
-## Background
-
-Traditional version-bumping tools either require manual developer input (e.g. choosing between patch, minor, or major) or rely strictly on Conventional Commit messages. In reality, commit histories can be incomplete or inaccurate, increasing the risk of unflagged breaking changes or improper releases.
-
-`shift-this-version` solves this by examining actual source code diffs:
-- Noise reduction: automatically ignores lockfiles, minified bundles, documentation, and image assets.
-- Token management: summarizes and truncates large diffs using `git diff --stat` to prevent context window overflow.
-- Semantic evaluation: prompts the AI to identify API signature breaks, additions, bug fixes, and non-functional changes.
-- Fallback resilience: operates seamlessly in manual mode when offline or when no AI provider is configured.
 
 ## Install
 
